@@ -1,0 +1,8 @@
+comptime GRID_SIZE = 12
+comptime CELL_SIZE = 50
+comptime GRID_WIDTH = GRID_SIZE * CELL_SIZE
+comptime GRID_HEIGHT = GRID_SIZE * CELL_SIZE
+comptime UI_WIDTH = 200
+comptime SCREEN_WIDTH = GRID_WIDTH + UI_WIDTH
+comptime SCREEN_HEIGHT = GRID_HEIGHT
+comptime FPS = 60
