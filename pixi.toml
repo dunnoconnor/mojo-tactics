@@ -6,5 +6,12 @@ platforms = ["osx-arm64"]
 version = "0.1.0"
 
 [tasks]
+start = "mojo mojo_tactics.mojo"
 
 [dependencies]
+mojo = ">=1.0.0b2,<2"
+python = ">=3.11,<3.15"
+
+[pypi-dependencies]
+pygame-ce = ">=2.5.6, <3"
+pytest = ">=8.0.0"
