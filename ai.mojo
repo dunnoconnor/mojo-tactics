@@ -18,6 +18,71 @@ def is_tile_occupied(x: Int, y: Int, units: List[Unit], terrain: Terrain, exclud
     return False
 
 
+def find_path_to(unit: Unit, target_x: Int, target_y: Int, terrain: Terrain, units: List[Unit], unit_idx: Int) -> List[Tuple[Int, Int]]:
+    var start = (unit.x, unit.y)
+    var goal = (target_x, target_y)
+
+    if start[0] == goal[0] and start[1] == goal[1]:
+        return List[Tuple[Int, Int]]()
+
+    var queue = List[Tuple[Int, Int]]()
+    queue.append(start)
+
+    var parent = List[Int]()
+    var visited = List[Bool]()
+    var cost = List[Int]()
+    for _ in range(GRID_SIZE * GRID_SIZE):
+        parent.append(-1)
+        visited.append(False)
+        cost.append(99)
+
+    visited[start[1] * GRID_SIZE + start[0]] = True
+    cost[start[1] * GRID_SIZE + start[0]] = 0
+
+    var q_idx = 0
+    while q_idx < len(queue):
+        var current = queue[q_idx]
+        q_idx += 1
+
+        if current[0] == goal[0] and current[1] == goal[1]:
+            break
+
+        var dirs = List[Tuple[Int, Int]]()
+        dirs.append((1, 0))
+        dirs.append((-1, 0))
+        dirs.append((0, 1))
+        dirs.append((0, -1))
+
+        for d in range(len(dirs)):
+            var nx = current[0] + dirs[d][0]
+            var ny = current[1] + dirs[d][1]
+            if nx >= 0 and nx < GRID_SIZE and ny >= 0 and ny < GRID_SIZE:
+                var idx = ny * GRID_SIZE + nx
+                var tile_cost = terrain.get_terrain_cost(nx, ny)
+                var new_cost = cost[current[1] * GRID_SIZE + current[0]] + tile_cost
+                if not visited[idx] and new_cost <= 4:
+                    if (nx == goal[0] and ny == goal[1]) or not is_tile_occupied(nx, ny, units, terrain, exclude_idx=unit_idx):
+                        visited[idx] = True
+                        cost[idx] = new_cost
+                        parent[idx] = current[1] * GRID_SIZE + current[0]
+                        queue.append((nx, ny))
+
+    if not visited[goal[1] * GRID_SIZE + goal[0]]:
+        return List[Tuple[Int, Int]]()
+
+    var path = List[Tuple[Int, Int]]()
+    var cur_idx = goal[1] * GRID_SIZE + goal[0]
+    while cur_idx != -1:
+        path.append((cur_idx % GRID_SIZE, cur_idx // GRID_SIZE))
+        cur_idx = parent[cur_idx]
+
+    var result = List[Tuple[Int, Int]]()
+    for i in range(len(path)):
+        result.append(path[len(path) - 1 - i])
+
+    return result^
+
+
 def get_live_unit_indices(units: List[Unit], team: String) -> List[Int]:
     var result = List[Int]()
     for i in range(len(units)):
