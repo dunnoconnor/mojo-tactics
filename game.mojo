@@ -6,10 +6,10 @@ from sprites import SpriteRenderer
 from terrain import Terrain
 from ai import find_closest_player, get_live_unit_indices, get_adjacent_enemy_indices, find_best_move, find_path_to
 
-def load_high_score() raises -> Int:
+def load_fastest_run() raises -> Int:
     try:
         var builtins = Python.import_module("builtins")
-        var f = builtins.open(".highscore", "r")
+        var f = builtins.open(".fastest", "r")
         var content = f.read()
         f.close()
         return Int(py=builtins.int(content.strip()))
@@ -36,7 +36,8 @@ struct Game:
     var fire_tiles: List[Int]
     var power_mode: String
     var score: Int
-    var high_score: Int
+    var turn_count: Int
+    var fastest_run: Int
     var title_screen: Bool
     var batteries: List[Int]
     var how_to_play: Bool
@@ -65,7 +66,8 @@ struct Game:
         self.fire_tiles = List[Int]()
         self.power_mode = ""
         self.score = 0
-        self.high_score = load_high_score()
+        self.turn_count = 1
+        self.fastest_run = load_fastest_run()
         self.title_screen = True
         self.batteries = List[Int]()
         self.how_to_play = False
@@ -94,6 +96,7 @@ struct Game:
         self.fire_tiles = List[Int]()
         self.power_mode = ""
         self.score = 0
+        self.turn_count = 1
         self.terrain = Terrain()
         self.batteries = List[Int]()
         self.spawn_battery()
@@ -111,16 +114,17 @@ struct Game:
                 self.score += 1
         self.units[unit_idx] = unit
 
-    def save_high_score(mut self) raises:
-        if self.score > self.high_score:
-            self.high_score = self.score
-            try:
-                var builtins = Python.import_module("builtins")
-                var f = builtins.open(".highscore", "w")
-                f.write(String(self.high_score))
-                f.close()
-            except:
-                pass
+    def save_fastest_run(mut self) raises:
+        if self.winner == "player":
+            if self.fastest_run == 0 or self.turn_count < self.fastest_run:
+                self.fastest_run = self.turn_count
+                try:
+                    var builtins = Python.import_module("builtins")
+                    var f = builtins.open(".fastest", "w")
+                    f.write(String(self.fastest_run))
+                    f.close()
+                except:
+                    pass
 
     def spawn_bug(mut self) raises:
         if self.enemies_spawned >= self.max_enemies:
@@ -335,6 +339,7 @@ struct Game:
         self.check_win()
         if not self.game_over:
             self.turn = "player"
+            self.turn_count += 1
             self.message = "Your Turn - Select a unit"
             for j in range(len(self.units)):
                 if self.units[j].team == "player":
@@ -619,11 +624,10 @@ struct Game:
         if len(self.get_live_units("player")) == 0:
             self.winner = "enemy"
             self.game_over = True
-            self.save_high_score()
         elif self.enemies_spawned >= self.max_enemies and len(self.get_live_units("enemy")) == 0:
             self.winner = "player"
             self.game_over = True
-            self.save_high_score()
+            self.save_fastest_run()
 
     def get_button_rects(self) raises -> List[PythonObject]:
         var buttons = List[PythonObject]()
@@ -822,9 +826,9 @@ struct Game:
         var score_surf = self.font.render(score_text, True, Python.tuple(255, 255, 100))
         self.screen.blit(score_surf, Python.tuple(GRID_WIDTH + 10, SCREEN_HEIGHT - 90))
 
-        var high_text = "High: " + String(self.high_score)
-        var high_surf = self.font.render(high_text, True, Python.tuple(255, 200, 50))
-        self.screen.blit(high_surf, Python.tuple(GRID_WIDTH + 10, SCREEN_HEIGHT - 115))
+        var fastest_text = "Fastest: " + (String(self.fastest_run) + " turns" if self.fastest_run > 0 else "None")
+        var fastest_surf = self.font.render(fastest_text, True, Python.tuple(255, 200, 50))
+        self.screen.blit(fastest_surf, Python.tuple(GRID_WIDTH + 10, SCREEN_HEIGHT - 115))
 
         if self.selected_idx >= 0 and not self.game_over:
             var sel = self.units[self.selected_idx]
@@ -883,10 +887,10 @@ struct Game:
         var start_rect = start_surf.get_rect(center=Python.tuple(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 80))
         self.screen.blit(start_surf, start_rect)
 
-        var high_text = "High Score: " + String(self.high_score)
-        var high_surf = self.font.render(high_text, True, COLOR_HIGH)
-        var high_rect = high_surf.get_rect(center=Python.tuple(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 120))
-        self.screen.blit(high_surf, high_rect)
+        var fastest_text = "Fastest Run: " + (String(self.fastest_run) + " turns" if self.fastest_run > 0 else "None")
+        var fastest_surf = self.font.render(fastest_text, True, COLOR_HIGH)
+        var fastest_rect = fastest_surf.get_rect(center=Python.tuple(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 120))
+        self.screen.blit(fastest_surf, fastest_rect)
 
         var htp_surf = self.font.render("How to Play", True, Python.tuple(180, 180, 255))
         var htp_rect = htp_surf.get_rect(center=Python.tuple(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 160))
@@ -908,7 +912,7 @@ struct Game:
         var lines = List[String]()
         lines.append("GOAL")
         lines.append("Defeat all 6 bugs to win.")
-        lines.append("Kill bugs for points. High score is saved.")
+        lines.append("Fewest turns to win is saved as your fastest run.")
         lines.append("")
         lines.append("CONTROLS")
         lines.append("Left click: select, move, attack, use powers")

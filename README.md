@@ -74,7 +74,7 @@ You control 3 unique units, each with 4 HP:
 
 - **Win**: All 6 enemy bugs are defeated.
 - **Lose**: All 3 player units are defeated.
-- Your **high score** (total bugs killed) is saved locally.
+- Your **fastest run** (fewest turns to win) is saved locally.
 
 ## Project Structure
 
@@ -87,7 +87,7 @@ mojo-tactics/
 ├── terrain.mojo         # Terrain types and rendering
 ├── sprites.mojo         # Sprite rendering utilities
 ├── constants.mojo       # Grid size, screen dimensions, etc.
-└── .highscore           # Local high score file (auto-generated)
+└── .fastest             # Local fastest run file (auto-generated)
 ```
 
 ## License
