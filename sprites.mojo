@@ -59,31 +59,52 @@ struct SpriteRenderer:
         var w = 240 if not dim else 140
         var g = 180 if not dim else 100
         var b = 200 if not dim else 120
+        var jet = 80 if not dim else 50
+        var flame = 255 if not dim else 150
+        var hover = 2
+        var hs = sy - hover * s
+
+        # Jetpack backpack and straps
+        for j in range(3, 6):
+            self._draw_pixel(2, j, jet, jet, jet, sx, hs, s)
+            self._draw_pixel(9, j, jet, jet, jet, sx, hs, s)
+        self._draw_pixel(1, 4, jet, jet, jet, sx, hs, s)
+        self._draw_pixel(10, 4, jet, jet, jet, sx, hs, s)
+        self._draw_pixel(1, 5, jet, jet, jet, sx, hs, s)
+        self._draw_pixel(10, 5, jet, jet, jet, sx, hs, s)
+
+        # Thruster flames
+        self._draw_pixel(1, 6, flame, 120, 0, sx, hs, s)
+        self._draw_pixel(10, 6, flame, 120, 0, sx, hs, s)
+        self._draw_pixel(1, 7, flame, 80, 0, sx, hs, s)
+        self._draw_pixel(10, 7, flame, 80, 0, sx, hs, s)
+
+        # Body (hovered)
         for j in range(1, 5):
             for i in range(3, 9):
-                self._draw_pixel(i, j, w, w, w, sx, sy, s)
+                self._draw_pixel(i, j, w, w, w, sx, hs, s)
         for j in range(2, 4):
             for i in range(4, 8):
-                self._draw_pixel(i, j, 30, 60, 120, sx, sy, s)
-        self._draw_pixel(5, 2, 80, 120, 200, sx, sy, s)
-        self._draw_pixel(6, 2, 80, 120, 200, sx, sy, s)
+                self._draw_pixel(i, j, 30, 60, 120, sx, hs, s)
+        self._draw_pixel(5, 2, 80, 120, 200, sx, hs, s)
+        self._draw_pixel(6, 2, 80, 120, 200, sx, hs, s)
         for j in range(5, 10):
             for i in range(3, 9):
-                self._draw_pixel(i, j, w, w, w, sx, sy, s)
+                self._draw_pixel(i, j, w, w, w, sx, hs, s)
         for j in range(5, 9):
-            self._draw_pixel(2, j, g, g, b, sx, sy, s)
-            self._draw_pixel(8, j, g, g, b, sx, sy, s)
-        self._draw_pixel(5, 6, 60, 80, 180, sx, sy, s)
-        self._draw_pixel(6, 6, 60, 80, 180, sx, sy, s)
-        self._draw_pixel(5, 7, 60, 80, 180, sx, sy, s)
-        self._draw_pixel(6, 7, 60, 80, 180, sx, sy, s)
+            self._draw_pixel(2, j, g, g, b, sx, hs, s)
+            self._draw_pixel(8, j, g, g, b, sx, hs, s)
+        self._draw_pixel(5, 6, 60, 80, 180, sx, hs, s)
+        self._draw_pixel(6, 6, 60, 80, 180, sx, hs, s)
+        self._draw_pixel(5, 7, 60, 80, 180, sx, hs, s)
+        self._draw_pixel(6, 7, 60, 80, 180, sx, hs, s)
         for i in range(3, 9):
-            self._draw_pixel(i, 9, g, g, b, sx, sy, s)
+            self._draw_pixel(i, 9, g, g, b, sx, hs, s)
         for j in range(10, 12):
             for i in range(4, 6):
-                self._draw_pixel(i, j, w, w, w, sx, sy, s)
+                self._draw_pixel(i, j, w, w, w, sx, hs, s)
             for i in range(6, 8):
-                self._draw_pixel(i, j, w, w, w, sx, sy, s)
+                self._draw_pixel(i, j, w, w, w, sx, hs, s)
 
     def draw_mammoth(self, sx: Int, sy: Int, dim: Bool) raises:
         var s = 3

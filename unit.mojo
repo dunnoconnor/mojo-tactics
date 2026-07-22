@@ -10,6 +10,7 @@ struct Unit(ImplicitlyCopyable, Movable):
     var power_used: Bool
     var dying: Bool
     var death_timer: Int
+    var jetpack: Bool
 
     def __init__(out self, x: Int, y: Int, team: String, unit_type: String = "enemy"):
         self.x = x
@@ -23,6 +24,7 @@ struct Unit(ImplicitlyCopyable, Movable):
         self.power_used = False
         self.dying = False
         self.death_timer = 0
+        self.jetpack = (unit_type == "Max")
 
     def is_adjacent(self, other: Unit) -> Bool:
         return abs(self.x - other.x) + abs(self.y - other.y) == 1

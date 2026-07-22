@@ -4,10 +4,10 @@ from unit import Unit
 from terrain import Terrain
 
 
-def is_tile_occupied(x: Int, y: Int, units: List[Unit], terrain: Terrain, exclude_idx: Int = -1) -> Bool:
+def is_tile_occupied(x: Int, y: Int, units: List[Unit], terrain: Terrain, exclude_idx: Int = -1, jetpack: Bool = False) -> Bool:
     if x < 0 or x >= GRID_SIZE or y < 0 or y >= GRID_SIZE:
         return True
-    if terrain.is_impassable(x, y):
+    if not jetpack and terrain.is_impassable(x, y):
         return True
     for i in range(len(units)):
         if i == exclude_idx:
@@ -18,7 +18,7 @@ def is_tile_occupied(x: Int, y: Int, units: List[Unit], terrain: Terrain, exclud
     return False
 
 
-def find_path_to(unit: Unit, target_x: Int, target_y: Int, terrain: Terrain, units: List[Unit], unit_idx: Int) -> List[Tuple[Int, Int]]:
+def find_path_to(unit: Unit, target_x: Int, target_y: Int, terrain: Terrain, units: List[Unit], unit_idx: Int, jetpack: Bool = False) -> List[Tuple[Int, Int]]:
     var start = (unit.x, unit.y)
     var goal = (target_x, target_y)
 
@@ -58,10 +58,10 @@ def find_path_to(unit: Unit, target_x: Int, target_y: Int, terrain: Terrain, uni
             var ny = current[1] + dirs[d][1]
             if nx >= 0 and nx < GRID_SIZE and ny >= 0 and ny < GRID_SIZE:
                 var idx = ny * GRID_SIZE + nx
-                var tile_cost = terrain.get_terrain_cost(nx, ny)
+                var tile_cost = 1 if jetpack else terrain.get_terrain_cost(nx, ny)
                 var new_cost = cost[current[1] * GRID_SIZE + current[0]] + tile_cost
                 if not visited[idx] and new_cost <= 4:
-                    if (nx == goal[0] and ny == goal[1]) or not is_tile_occupied(nx, ny, units, terrain, exclude_idx=unit_idx):
+                    if (nx == goal[0] and ny == goal[1]) or not is_tile_occupied(nx, ny, units, terrain, exclude_idx=unit_idx, jetpack=jetpack):
                         visited[idx] = True
                         cost[idx] = new_cost
                         parent[idx] = current[1] * GRID_SIZE + current[0]
@@ -125,7 +125,7 @@ def is_tile_on_fire(x: Int, y: Int, fire_tiles: List[Int]) -> Bool:
     return False
 
 
-def find_best_move(unit: Unit, units: List[Unit], terrain: Terrain, fire_tiles: List[Int]) -> Int:
+def find_best_move(unit: Unit, units: List[Unit], terrain: Terrain, fire_tiles: List[Int], jetpack: Bool = False) -> Int:
     var best_idx = -1
     var best_cost = 99
     var best_score = -1
@@ -172,19 +172,19 @@ def find_best_move(unit: Unit, units: List[Unit], terrain: Terrain, fire_tiles: 
         if ccost >= 4:
             continue
 
-        var dirs = List[Int]()
-        dirs.append(1)
-        dirs.append(-1)
-        dirs.append(GRID_SIZE)
-        dirs.append(-GRID_SIZE)
+        var dirs = List[Tuple[Int, Int]]()
+        dirs.append((1, 0))
+        dirs.append((-1, 0))
+        dirs.append((0, 1))
+        dirs.append((0, -1))
         for d in range(len(dirs)):
-            var nidx = cidx + dirs[d]
-            var nx = nidx % GRID_SIZE
-            var ny = nidx // GRID_SIZE
+            var nx = cx + dirs[d][0]
+            var ny = cy + dirs[d][1]
             if nx >= 0 and nx < GRID_SIZE and ny >= 0 and ny < GRID_SIZE:
-                var tile_cost = terrain.get_terrain_cost(nx, ny)
+                var nidx = ny * GRID_SIZE + nx
+                var tile_cost = 1 if jetpack else terrain.get_terrain_cost(nx, ny)
                 var new_cost = ccost + tile_cost
-                if new_cost <= 4 and new_cost < visited[nidx] and not is_tile_occupied(nx, ny, units, terrain, exclude_idx=-1):
+                if new_cost <= 4 and new_cost < visited[nidx] and not is_tile_occupied(nx, ny, units, terrain, exclude_idx=-1, jetpack=jetpack):
                     visited[nidx] = new_cost
                     queue.append(nidx)
                     cost.append(new_cost)

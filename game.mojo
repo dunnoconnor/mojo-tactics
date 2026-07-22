@@ -39,6 +39,7 @@ struct Game:
     var high_score: Int
     var title_screen: Bool
     var batteries: List[Int]
+    var how_to_play: Bool
 
     def __init__(out self) raises:
         self.pygame = Python.import_module("pygame")
@@ -65,6 +66,7 @@ struct Game:
         self.high_score = load_high_score()
         self.title_screen = True
         self.batteries = List[Int]()
+        self.how_to_play = False
         self.reset_game()
 
     def reset_game(mut self) raises:
@@ -137,6 +139,8 @@ struct Game:
             self.units.append(Unit(sx, sy, "enemy"))
 
     def spawn_battery(mut self) raises:
+        if len(self.batteries) >= 3:
+            return
         var random = Python.import_module("random")
         var candidates = List[Int]()
         for i in range(GRID_SIZE * GRID_SIZE):
@@ -187,10 +191,10 @@ struct Game:
                 result.append(i)
         return result^
 
-    def is_occupied(self, x: Int, y: Int, exclude_idx: Int = -1) -> Bool:
+    def is_occupied(self, x: Int, y: Int, exclude_idx: Int = -1, jetpack: Bool = False) -> Bool:
         if x < 0 or x >= GRID_SIZE or y < 0 or y >= GRID_SIZE:
             return True
-        if self.terrain.is_impassable(x, y):
+        if not jetpack and self.terrain.is_impassable(x, y):
             return True
         for i in range(len(self.units)):
             if i == exclude_idx:
@@ -237,9 +241,9 @@ struct Game:
                 var ny = cy + dirs[i][1]
                 if nx >= 0 and nx < GRID_SIZE and ny >= 0 and ny < GRID_SIZE:
                     var idx = ny * GRID_SIZE + nx
-                    var tile_cost = self.terrain.get_terrain_cost(nx, ny)
+                    var tile_cost = 1 if unit.jetpack else self.terrain.get_terrain_cost(nx, ny)
                     var new_cost = ccost + tile_cost
-                    if new_cost <= 4 and new_cost < visited[idx] and not self.is_occupied(nx, ny, exclude_idx=unit_idx):
+                    if new_cost <= 4 and new_cost < visited[idx] and not self.is_occupied(nx, ny, exclude_idx=unit_idx, jetpack=unit.jetpack):
                         visited[idx] = new_cost
                         queue.append((nx, ny))
                         cost.append(new_cost)
@@ -267,7 +271,7 @@ struct Game:
 
     def apply_fire_damage(mut self, unit_idx: Int):
         var unit = self.units[unit_idx]
-        if self.is_tile_on_fire(unit.x, unit.y):
+        if not unit.jetpack and self.is_tile_on_fire(unit.x, unit.y):
             self.deal_damage(unit_idx, 1)
 
     def ai_turn(mut self) raises:
@@ -289,12 +293,12 @@ struct Game:
                     return
 
                 if not self.units[i].moved:
-                    var best = find_best_move(self.units[i], self.units, self.terrain, self.fire_tiles)
+                    var best = find_best_move(self.units[i], self.units, self.terrain, self.fire_tiles, self.units[i].jetpack)
                     if best >= 0:
                         var bx = best % GRID_SIZE
                         var by = best // GRID_SIZE
                         if bx != self.units[i].x or by != self.units[i].y:
-                            var path = find_path_to(self.units[i], bx, by, self.terrain, self.units, i)
+                            var path = find_path_to(self.units[i], bx, by, self.terrain, self.units, i, self.units[i].jetpack)
                             if len(path) > 0:
                                 self.animate_move(i, path)
                             self.units[i].moved = True
@@ -367,7 +371,7 @@ struct Game:
                     self.confirm_move()
                 return
             if clicked_idx >= 0 and self.units[clicked_idx].team == "enemy" and selected_unit.is_adjacent(self.units[clicked_idx]):
-                if not selected_unit.attacked:
+                if not selected_unit.attacked and not selected_unit.power_used:
                     self.deal_damage(clicked_idx, 1)
                     self.units[self.selected_idx].attacked = True
                     self.selected_idx = -1
@@ -405,8 +409,6 @@ struct Game:
             if dist <= 4 and dist > 0:
                 self.add_fire_tile(x, y)
                 self.units[self.selected_idx].power_used = True
-                self.units[self.selected_idx].moved = True
-                self.units[self.selected_idx].attacked = True
                 self.power_mode = ""
                 self.selected_idx = -1
                 self.message = "Flame thrown!"
@@ -425,8 +427,8 @@ struct Game:
                 target.y = tmp_y
                 self.units[clicked_idx] = target
                 self.units[self.selected_idx].power_used = True
-                self.units[self.selected_idx].moved = True
-                self.units[self.selected_idx].attacked = True
+                self.consume_battery(self.selected_idx)
+                self.consume_battery(clicked_idx)
                 self.power_mode = ""
                 self.selected_idx = -1
                 self.message = "Swap complete!"
@@ -515,7 +517,6 @@ struct Game:
                 spaces_moved = step
 
         self.units[mammoth_idx].moved = True
-        self.units[mammoth_idx].attacked = True
         self.units[mammoth_idx].power_used = True
         self.consume_battery(mammoth_idx)
         self.apply_fire_damage(mammoth_idx)
@@ -554,12 +555,14 @@ struct Game:
                     self.reset_game()
                 elif label == "Power":
                     self.activate_power()
+                elif label == "How to Play":
+                    self.how_to_play = True
 
     def activate_power(mut self):
         if self.selected_idx < 0:
             return
         var unit = self.units[self.selected_idx]
-        if unit.power_used or unit.moved:
+        if unit.power_used or unit.attacked:
             return
 
         var unit_type = unit.unit_type
@@ -575,7 +578,7 @@ struct Game:
 
     def confirm_move(mut self) raises:
         if self.has_pending and self.selected_idx >= 0:
-            var path = find_path_to(self.units[self.selected_idx], self.pending_x, self.pending_y, self.terrain, self.units, self.selected_idx)
+            var path = find_path_to(self.units[self.selected_idx], self.pending_x, self.pending_y, self.terrain, self.units, self.selected_idx, self.units[self.selected_idx].jetpack)
             if len(path) > 0:
                 self.animate_move(self.selected_idx, path)
             self.units[self.selected_idx].moved = True
@@ -623,6 +626,8 @@ struct Game:
 
         if self.game_over:
             buttons.append(self.pygame.Rect(bx, by, bw, bh))
+        by += bh + gap * 2
+        buttons.append(self.pygame.Rect(bx, by, bw, bh))
         return buttons^
 
     def get_button_labels(self) -> List[String]:
@@ -633,6 +638,7 @@ struct Game:
         labels.append("End Turn")
         if self.game_over:
             labels.append("Restart")
+        labels.append("How to Play")
         return labels^
 
     def get_button_enabled(self) -> List[Bool]:
@@ -644,13 +650,14 @@ struct Game:
         var power_enabled = False
         if self.selected_idx >= 0 and self.turn == "player" and not self.game_over:
             var unit = self.units[self.selected_idx]
-            if unit.team == "player" and not unit.power_used and not unit.moved:
+            if unit.team == "player" and not unit.power_used and not unit.attacked:
                 power_enabled = True
         enabled.append(power_enabled)
         var end_enabled = self.turn == "player" and not self.game_over
         enabled.append(end_enabled)
         if self.game_over:
             enabled.append(True)
+        enabled.append(True)
         return enabled^
 
     def draw(self) raises:
@@ -781,6 +788,9 @@ struct Game:
             elif not self.units[self.selected_idx].moved:
                 msg_line1 = "Click a tile to move"
                 msg_line2 = "or adj. bug to attack"
+            elif not self.units[self.selected_idx].attacked and not self.units[self.selected_idx].power_used:
+                msg_line1 = "Click adj. bug to attack"
+                msg_line2 = "or use Power"
             else:
                 msg_line1 = "Click adj. bug to attack"
                 msg_line2 = "or press End Turn"
@@ -817,11 +827,11 @@ struct Game:
                 name = "Bug"
                 power = "Bite: 1 dmg adjacent"
             elif sel.unit_type == "Mojo":
-                power = "Flame: Fire tile within 4"
+                power = "Flame: creates a fire tile within 4"
             elif sel.unit_type == "Max":
-                power = "Swap places with any unit within 4"
+                power = "Jetpack: ignores terrain & fire. Swap within 4."
             elif sel.unit_type == "Mammoth":
-                power = "Charge: Rush up to 4 spaces"
+                power = "Charge: rush up to 4 spaces"
             var info = name + "  HP:" + String(sel.hp) + "/4"
             var info_surf = self.font.render(info, True, Python.tuple(255, 255, 200))
             self.screen.blit(info_surf, Python.tuple(GRID_WIDTH + 10, 360))
@@ -871,6 +881,72 @@ struct Game:
         var high_rect = high_surf.get_rect(center=Python.tuple(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 120))
         self.screen.blit(high_surf, high_rect)
 
+        var htp_surf = self.font.render("How to Play", True, Python.tuple(180, 180, 255))
+        var htp_rect = htp_surf.get_rect(center=Python.tuple(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 160))
+        self.screen.blit(htp_surf, htp_rect)
+
+    def draw_how_to_play(mut self) raises:
+        var COLOR_BG = Python.tuple(20, 10, 30)
+        var COLOR_TITLE = Python.tuple(255, 140, 0)
+        var COLOR_TEXT = Python.tuple(255, 255, 255)
+        var COLOR_SECTION = Python.tuple(255, 200, 100)
+        var COLOR_BACK = Python.tuple(180, 180, 255)
+
+        self.screen.fill(COLOR_BG)
+
+        var title_surf = self.big_font.render("How to Play", True, COLOR_TITLE)
+        var title_rect = title_surf.get_rect(center=Python.tuple(SCREEN_WIDTH // 2, 40))
+        self.screen.blit(title_surf, title_rect)
+
+        var lines = List[String]()
+        lines.append("GOAL")
+        lines.append("Survive as long as possible.")
+        lines.append("Kill bugs for points. High score is saved.")
+        lines.append("")
+        lines.append("CONTROLS")
+        lines.append("Left click: select, move, attack, use powers")
+        lines.append("Right click: deselect current unit")
+        lines.append("")
+        lines.append("MOVEMENT")
+        lines.append("Select a unit, then click a green tile to move.")
+        lines.append("Movement cost: Grass=1, Water=2, Rocks=blocked.")
+        lines.append("Max movement budget is 4 per unit per turn.")
+        lines.append("")
+        lines.append("ATTACK")
+        lines.append("Click an adjacent enemy to deal 1 damage.")
+        lines.append("")
+        lines.append("POWERS")
+        lines.append("All units can move then use their power or attack.")
+        lines.append("You cannot attack AND use a power in the same turn.")
+        lines.append("Mojo: Flame - creates a fire tile within 4 spaces.")
+        lines.append("Max: Swap - swap places with any unit within 4.")
+        lines.append("      Max has a jetpack: ignores terrain, hovers over fire.")
+        lines.append("Mammoth: Charge - rush up to 4 spaces pushing enemies.")
+        lines.append("")
+        lines.append("FIRE TILES")
+        lines.append("Stepping onto fire deals 1 damage.")
+        lines.append("Ending your turn on fire also deals 1 damage.")
+        lines.append("")
+        lines.append("BATTERIES")
+        lines.append("Cyan circles heal 1 HP when stepped on.")
+        lines.append("Max 3 batteries on the map at once.")
+        lines.append("")
+        lines.append("ENEMIES")
+        lines.append("A new bug spawns every turn on the bottom or right edge.")
+        lines.append("They move toward your units and attack when adjacent.")
+
+        var y = 80
+        for i in range(len(lines)):
+            var line = lines[i]
+            var color = COLOR_SECTION if line == "GOAL" or line == "CONTROLS" or line == "MOVEMENT" or line == "ATTACK" or line == "POWERS" or line == "FIRE TILES" or line == "BATTERIES" or line == "ENEMIES" else COLOR_TEXT
+            var surf = self.font.render(line, True, color)
+            self.screen.blit(surf, Python.tuple(20, y))
+            y += 22
+
+        var back_surf = self.font.render("Click to go back", True, COLOR_BACK)
+        var back_rect = back_surf.get_rect(center=Python.tuple(SCREEN_WIDTH // 2, SCREEN_HEIGHT - 30))
+        self.screen.blit(back_surf, back_rect)
+
     def run(mut self) raises:
         var running = True
         while running:
@@ -879,17 +955,29 @@ struct Game:
                     running = False
                 elif event.type == self.pygame.MOUSEBUTTONDOWN:
                     if Int(py=event.button) == 1:
-                        if self.title_screen:
-                            self.title_screen = False
+                        if self.how_to_play:
+                            self.how_to_play = False
+                        elif self.title_screen:
+                            var pos = event.pos
+                            var px = Int(py=pos[0])
+                            var py = Int(py=pos[1])
+                            var htp_y = SCREEN_HEIGHT // 2 + 160
+                            var htp_rect = self.pygame.Rect(0, htp_y - 15, SCREEN_WIDTH, 30)
+                            if px >= Int(py=htp_rect[0]) and px < Int(py=htp_rect[0]) + Int(py=htp_rect[2]) and py >= Int(py=htp_rect[1]) and py < Int(py=htp_rect[1]) + Int(py=htp_rect[3]):
+                                self.how_to_play = True
+                            else:
+                                self.title_screen = False
                         else:
                             self.handle_click(event.pos)
                     elif Int(py=event.button) == 3:
-                        if not self.title_screen and self.turn == "player" and self.selected_idx >= 0:
+                        if not self.title_screen and not self.how_to_play and self.turn == "player" and self.selected_idx >= 0:
                             self.selected_idx = -1
                             self.has_pending = False
                             self.power_mode = ""
 
-            if self.title_screen:
+            if self.how_to_play:
+                self.draw_how_to_play()
+            elif self.title_screen:
                 self.draw_title()
             else:
                 self.update_death_animations()
