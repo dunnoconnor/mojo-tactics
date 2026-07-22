@@ -101,19 +101,18 @@ def get_adjacent_enemy_indices(units: List[Unit], unit_idx: Int) -> List[Int]:
     return enemies^
 
 
-def find_closest_player(units: List[Unit], enemy_idx: Int) -> Int:
+def find_closest_player(units: List[Unit], enemy_idx: Int, player_indices: List[Int]) -> Int:
     var enemy = units[enemy_idx]
-    var players = get_live_unit_indices(units, "player")
-    if len(players) == 0:
+    if len(player_indices) == 0:
         return -1
-    var closest_idx = players[0]
+    var closest_idx = player_indices[0]
     var closest_dist = abs(units[closest_idx].x - enemy.x) + abs(units[closest_idx].y - enemy.y)
-    for j in range(1, len(players)):
-        var p = units[players[j]]
+    for j in range(1, len(player_indices)):
+        var p = units[player_indices[j]]
         var d = abs(p.x - enemy.x) + abs(p.y - enemy.y)
         if d < closest_dist:
             closest_dist = d
-            closest_idx = players[j]
+            closest_idx = player_indices[j]
     return closest_idx
 
 
@@ -126,6 +125,12 @@ def is_tile_on_fire(x: Int, y: Int, fire_tiles: List[Int]) -> Bool:
 
 
 def find_best_move(unit: Unit, units: List[Unit], terrain: Terrain, fire_tiles: List[Int], jetpack: Bool = False) -> Int:
+    var player_positions = List[Tuple[Int, Int]]()
+    for i in range(len(units)):
+        var u = units[i]
+        if u.hp > 0 and not u.dying and u.team == "player":
+            player_positions.append((u.x, u.y))
+
     var best_idx = -1
     var best_cost = 99
     var best_score = -1
@@ -151,14 +156,14 @@ def find_best_move(unit: Unit, units: List[Unit], terrain: Terrain, fire_tiles: 
         if ccost > 0 and ccost <= 4:
             var is_adjacent_to_player = False
             var closest_player_dist = 999
-            for i in range(len(units)):
-                var other = units[i]
-                if other.hp > 0 and not other.dying and other.team == "player":
-                    var dist = abs(cx - other.x) + abs(cy - other.y)
-                    if dist < closest_player_dist:
-                        closest_player_dist = dist
-                    if dist == 1:
-                        is_adjacent_to_player = True
+            for i in range(len(player_positions)):
+                var px = player_positions[i][0]
+                var py = player_positions[i][1]
+                var dist = abs(cx - px) + abs(cy - py)
+                if dist < closest_player_dist:
+                    closest_player_dist = dist
+                if dist == 1:
+                    is_adjacent_to_player = True
 
             var score = 100 if is_adjacent_to_player else 50 - closest_player_dist
 

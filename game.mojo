@@ -40,6 +40,8 @@ struct Game:
     var title_screen: Bool
     var batteries: List[Int]
     var how_to_play: Bool
+    var enemies_spawned: Int
+    var max_enemies: Int
 
     def __init__(out self) raises:
         self.pygame = Python.import_module("pygame")
@@ -67,6 +69,8 @@ struct Game:
         self.title_screen = True
         self.batteries = List[Int]()
         self.how_to_play = False
+        self.enemies_spawned = 0
+        self.max_enemies = 6
         self.reset_game()
 
     def reset_game(mut self) raises:
@@ -77,6 +81,7 @@ struct Game:
         self.units.append(Unit(8, 10, "enemy"))
         self.units.append(Unit(9, 8, "enemy"))
         self.units.append(Unit(10, 10, "enemy"))
+        self.enemies_spawned = 3
         self.selected_idx = -1
         self.has_pending = False
         self.pending_x = -1
@@ -118,6 +123,8 @@ struct Game:
                 pass
 
     def spawn_bug(mut self) raises:
+        if self.enemies_spawned >= self.max_enemies:
+            return
         var random = Python.import_module("random")
         var candidates = List[Int]()
 
@@ -137,6 +144,7 @@ struct Game:
             var sx = spawn_idx % GRID_SIZE
             var sy = spawn_idx // GRID_SIZE
             self.units.append(Unit(sx, sy, "enemy"))
+            self.enemies_spawned += 1
 
     def spawn_battery(mut self) raises:
         if len(self.batteries) >= 3:
@@ -278,6 +286,12 @@ struct Game:
         self.message = "Enemy Turn..."
         self.animating = True
 
+        var player_indices = get_live_unit_indices(self.units, "player")
+        if len(player_indices) == 0:
+            self.check_win()
+            self.animating = False
+            return
+
         for i in range(len(self.units)):
             var unit = self.units[i]
             if unit.team == "enemy" and unit.hp > 0 and not unit.dying:
@@ -286,7 +300,7 @@ struct Game:
                 u.attacked = False
                 self.units[i] = u
 
-                var closest_idx = find_closest_player(self.units, i)
+                var closest_idx = find_closest_player(self.units, i, player_indices)
                 if closest_idx < 0:
                     self.check_win()
                     self.animating = False
@@ -606,6 +620,10 @@ struct Game:
             self.winner = "enemy"
             self.game_over = True
             self.save_high_score()
+        elif self.enemies_spawned >= self.max_enemies and len(self.get_live_units("enemy")) == 0:
+            self.winner = "player"
+            self.game_over = True
+            self.save_high_score()
 
     def get_button_rects(self) raises -> List[PythonObject]:
         var buttons = List[PythonObject]()
@@ -808,17 +826,6 @@ struct Game:
         var high_surf = self.font.render(high_text, True, Python.tuple(255, 200, 50))
         self.screen.blit(high_surf, Python.tuple(GRID_WIDTH + 10, SCREEN_HEIGHT - 115))
 
-        if not self.game_over:
-            var instructions = List[String]()
-            instructions.append("Select unit to see info")
-            instructions.append("Move, Attack, Power")
-            instructions.append("End Turn when done")
-            var iy = 250
-            for i in range(len(instructions)):
-                var surf = self.font.render(instructions[i], True, Python.tuple(180, 180, 180))
-                self.screen.blit(surf, Python.tuple(GRID_WIDTH + 10, iy))
-                iy += 20
-
         if self.selected_idx >= 0 and not self.game_over:
             var sel = self.units[self.selected_idx]
             var name = sel.unit_type
@@ -900,7 +907,7 @@ struct Game:
 
         var lines = List[String]()
         lines.append("GOAL")
-        lines.append("Survive as long as possible.")
+        lines.append("Defeat all 6 bugs to win.")
         lines.append("Kill bugs for points. High score is saved.")
         lines.append("")
         lines.append("CONTROLS")
@@ -932,8 +939,8 @@ struct Game:
         lines.append("Max 3 batteries on the map at once.")
         lines.append("")
         lines.append("ENEMIES")
-        lines.append("A new bug spawns every turn on the bottom or right edge.")
-        lines.append("They move toward your units and attack when adjacent.")
+        lines.append("3 bugs start on the board. 3 reinforcements spawn over time.")
+        lines.append("Defeat all 6 bugs to win! They attack when adjacent.")
 
         var y = 80
         for i in range(len(lines)):
