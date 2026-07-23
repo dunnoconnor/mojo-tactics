@@ -45,7 +45,7 @@ struct LevelSelect:
 
         # Draw waves in the ocean — horizontal shimmering lines that move over time
         for wy in range(0, SCREEN_HEIGHT, 18):
-            var wave_offset = (tick * 2 + wy * 3) % (SCREEN_WIDTH + 40)
+            var wave_offset = (tick + wy * 3) % (SCREEN_WIDTH + 40)
             var wave_alpha = 60 + ((wy + tick) % 40)
             var wave_color = Python.tuple(wave_alpha + 140, min(wave_alpha + 180, 255), 255)
             var wx_start = wave_offset - 20
@@ -115,7 +115,7 @@ struct LevelSelect:
             var bx = x * CELL_SIZE
             var by = y * CELL_SIZE
             var h = ((x * 73856093) ^ (y * 19349663)) & 0x7FFFFFFF
-            var wave_phase = (tick * 2 + h) % 20
+            var wave_phase = (tick + h) % 20
             var foam_alpha = 120 + abs(10 - wave_phase) * 8
             var foam_color = Python.tuple(foam_alpha, foam_alpha, foam_alpha + 40)
             # Draw a foam line along the edge facing land
@@ -186,7 +186,7 @@ struct LevelSelect:
             var dy = my - ny
             var is_hover = dx * dx + dy * dy <= 40 * 40
 
-            var pulse = (tick % 6) * 3
+            var pulse = (tick % 10)
             var radius = 25 + pulse if not completed else 25
             var node_color = Python.tuple(255, 200, 50) if completed else (Python.tuple(100, 200, 255) if is_hover else Python.tuple(80, 150, 220))
             var glow_color = Python.tuple(255, 220, 100) if completed else Python.tuple(150, 220, 255)
