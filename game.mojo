@@ -43,6 +43,16 @@ struct Game:
     var how_to_play: Bool
     var enemies_spawned: Int
     var max_enemies: Int
+    var level_select: Bool
+    var victory_screen: Bool
+    var levels_completed: List[Bool]
+    var current_level: Int
+    var batteries_collected: Int
+    var level_objective: String
+    var has_power_preview: Bool
+    var power_preview_x: Int
+    var power_preview_y: Int
+    var power_preview_target_idx: Int
 
     def __init__(out self) raises:
         self.pygame = Python.import_module("pygame")
@@ -73,6 +83,24 @@ struct Game:
         self.how_to_play = False
         self.enemies_spawned = 0
         self.max_enemies = 6
+        self.level_select = False
+        self.victory_screen = False
+        self.levels_completed = List[Bool]()
+        self.levels_completed.append(False)
+        self.levels_completed.append(False)
+        self.levels_completed.append(False)
+        self.current_level = -1
+        self.batteries_collected = 0
+        self.level_objective = ""
+        self.has_power_preview = False
+        self.power_preview_x = -1
+        self.power_preview_y = -1
+        self.power_preview_target_idx = -1
+
+    def start_level(mut self, level: Int) raises:
+        self.current_level = level
+        if level == 2:
+            self.batteries_collected = 0
         self.reset_game()
 
     def reset_game(mut self) raises:
@@ -80,10 +108,34 @@ struct Game:
         self.units.append(Unit(1, 1, "player", "Mojo"))
         self.units.append(Unit(2, 3, "player", "Max"))
         self.units.append(Unit(3, 1, "player", "Mammoth"))
-        self.units.append(Unit(8, 10, "enemy"))
-        self.units.append(Unit(9, 8, "enemy"))
-        self.units.append(Unit(10, 10, "enemy"))
-        self.enemies_spawned = 3
+
+        if self.current_level == 0:
+            self.units.append(Unit(8, 10, "enemy"))
+            self.units.append(Unit(9, 8, "enemy"))
+            self.enemies_spawned = 2
+            self.max_enemies = 4
+            self.level_objective = "survive"
+        elif self.current_level == 1:
+            self.units.append(Unit(8, 10, "enemy"))
+            self.units.append(Unit(9, 8, "enemy"))
+            self.units.append(Unit(10, 10, "enemy"))
+            self.enemies_spawned = 3
+            self.max_enemies = 6
+            self.level_objective = "destroy"
+        elif self.current_level == 2:
+            self.units.append(Unit(8, 10, "enemy"))
+            self.enemies_spawned = 1
+            self.max_enemies = 3
+            self.level_objective = "collect"
+            self.batteries_collected = 0
+        else:
+            self.units.append(Unit(8, 10, "enemy"))
+            self.units.append(Unit(9, 8, "enemy"))
+            self.units.append(Unit(10, 10, "enemy"))
+            self.enemies_spawned = 3
+            self.max_enemies = 6
+            self.level_objective = ""
+
         self.selected_idx = -1
         self.has_pending = False
         self.pending_x = -1
@@ -95,6 +147,10 @@ struct Game:
         self.animating = False
         self.fire_tiles = List[Int]()
         self.power_mode = ""
+        self.has_power_preview = False
+        self.power_preview_x = -1
+        self.power_preview_y = -1
+        self.power_preview_target_idx = -1
         self.score = 0
         self.turn_count = 1
         self.terrain = Terrain()
@@ -170,7 +226,7 @@ struct Game:
             var idx = Int(py=random.randint(0, len(candidates) - 1))
             self.batteries.append(candidates[idx])
 
-    def consume_battery(mut self, unit_idx: Int):
+    def consume_battery(mut self, unit_idx: Int) raises:
         var unit = self.units[unit_idx]
         var tile_idx = unit.y * GRID_SIZE + unit.x
         for i in range(len(self.batteries)):
@@ -179,6 +235,9 @@ struct Game:
                     unit.hp += 1
                 self.units[unit_idx] = unit
                 _ = self.batteries.pop(i)
+                if self.level_objective == "collect":
+                    self.batteries_collected += 1
+                    self.check_win()
                 break
 
     def animate_move(mut self, unit_idx: Int, path: List[Tuple[Int, Int]]) raises:
@@ -426,42 +485,66 @@ struct Game:
 
         if self.power_mode == "flame":
             if dist <= 4 and dist > 0:
-                self.add_fire_tile(x, y)
-                self.units[self.selected_idx].power_used = True
-                self.power_mode = ""
-                self.selected_idx = -1
-                self.message = "Flame thrown!"
+                if self.has_power_preview and self.power_preview_x == x and self.power_preview_y == y:
+                    self.add_fire_tile(x, y)
+                    self.units[self.selected_idx].power_used = True
+                    self.power_mode = ""
+                    self.has_power_preview = False
+                    self.selected_idx = -1
+                    self.message = "Flame thrown!"
+                else:
+                    self.power_preview_x = x
+                    self.power_preview_y = y
+                    self.has_power_preview = True
+                    self.message = "Click again to confirm, Undo/Right-click to cancel"
             else:
                 self.power_mode = ""
+                self.has_power_preview = False
                 self.message = "Invalid flame target"
 
         elif self.power_mode == "swap":
             if clicked_idx >= 0 and clicked_idx != self.selected_idx and dist <= 4:
-                var target = self.units[clicked_idx]
-                var tmp_x = unit.x
-                var tmp_y = unit.y
-                self.units[self.selected_idx].x = target.x
-                self.units[self.selected_idx].y = target.y
-                target.x = tmp_x
-                target.y = tmp_y
-                self.units[clicked_idx] = target
-                self.units[self.selected_idx].power_used = True
-                self.consume_battery(self.selected_idx)
-                self.consume_battery(clicked_idx)
-                self.power_mode = ""
-                self.selected_idx = -1
-                self.message = "Swap complete!"
+                if self.has_power_preview and self.power_preview_target_idx == clicked_idx:
+                    var target = self.units[clicked_idx]
+                    var tmp_x = unit.x
+                    var tmp_y = unit.y
+                    self.units[self.selected_idx].x = target.x
+                    self.units[self.selected_idx].y = target.y
+                    target.x = tmp_x
+                    target.y = tmp_y
+                    self.units[clicked_idx] = target
+                    self.units[self.selected_idx].power_used = True
+                    self.consume_battery(self.selected_idx)
+                    self.consume_battery(clicked_idx)
+                    self.power_mode = ""
+                    self.has_power_preview = False
+                    self.selected_idx = -1
+                    self.message = "Swap complete!"
+                else:
+                    self.power_preview_target_idx = clicked_idx
+                    self.power_preview_x = x
+                    self.power_preview_y = y
+                    self.has_power_preview = True
+                    self.message = "Click again to confirm, Undo/Right-click to cancel"
             else:
                 self.power_mode = ""
+                self.has_power_preview = False
                 self.message = "Invalid swap target"
 
         elif self.power_mode == "charge":
             var dx = x - unit.x
             var dy = y - unit.y
             if abs(dx) + abs(dy) == 1:
-                self.execute_mammoth_charge(dx, dy)
+                if self.has_power_preview and self.power_preview_x == x and self.power_preview_y == y:
+                    self.execute_mammoth_charge(dx, dy)
+                else:
+                    self.power_preview_x = x
+                    self.power_preview_y = y
+                    self.has_power_preview = True
+                    self.message = "Click again to confirm, Undo/Right-click to cancel"
             else:
                 self.power_mode = ""
+                self.has_power_preview = False
                 self.message = "Invalid charge direction"
 
     def execute_mammoth_charge(mut self, dx: Int, dy: Int) raises:
@@ -540,6 +623,10 @@ struct Game:
         self.consume_battery(mammoth_idx)
         self.apply_fire_damage(mammoth_idx)
         self.power_mode = ""
+        self.has_power_preview = False
+        self.power_preview_x = -1
+        self.power_preview_y = -1
+        self.power_preview_target_idx = -1
         self.selected_idx = -1
         if hit_something:
             self.message = "Mammoth hit for " + String(hit_step) + " damage!"
@@ -572,6 +659,20 @@ struct Game:
                     self.end_turn()
                 elif label == "Restart":
                     self.reset_game()
+                elif label == "Continue":
+                    if self.winner == "player":
+                        self.levels_completed[self.current_level] = True
+                        if self.levels_completed[0] and self.levels_completed[1] and self.levels_completed[2]:
+                            self.victory_screen = True
+                            self.level_select = False
+                        else:
+                            self.level_select = True
+                            self.victory_screen = False
+                    else:
+                        self.level_select = True
+                        self.victory_screen = False
+                    self.current_level = -1
+                    self.game_over = False
                 elif label == "Power":
                     self.activate_power()
                 elif label == "How to Play":
@@ -587,13 +688,17 @@ struct Game:
         var unit_type = unit.unit_type
         if unit_type == "Mojo":
             self.power_mode = "flame"
-            self.message = "Flame: click a tile within 4 spaces"
+            self.message = "Flame: click a tile to preview"
         elif unit_type == "Max":
             self.power_mode = "swap"
-            self.message = "Swap: click a unit within 4 spaces"
+            self.message = "Swap: click a unit to preview"
         elif unit_type == "Mammoth":
             self.power_mode = "charge"
-            self.message = "Charge: click an adjacent tile for direction"
+            self.message = "Charge: click an adjacent tile to preview"
+        self.has_power_preview = False
+        self.power_preview_x = -1
+        self.power_preview_y = -1
+        self.power_preview_target_idx = -1
 
     def confirm_move(mut self) raises:
         if self.has_pending and self.selected_idx >= 0:
@@ -602,12 +707,20 @@ struct Game:
                 self.animate_move(self.selected_idx, path)
             self.units[self.selected_idx].moved = True
             self.has_pending = False
+            self.has_power_preview = False
+            self.power_preview_x = -1
+            self.power_preview_y = -1
+            self.power_preview_target_idx = -1
             self.consume_battery(self.selected_idx)
             self.apply_fire_damage(self.selected_idx)
 
     def undo_move(mut self):
         self.has_pending = False
         self.power_mode = ""
+        self.has_power_preview = False
+        self.power_preview_x = -1
+        self.power_preview_y = -1
+        self.power_preview_target_idx = -1
 
     def end_turn(mut self) raises:
         for i in range(len(self.units)):
@@ -617,6 +730,10 @@ struct Game:
         self.selected_idx = -1
         self.has_pending = False
         self.power_mode = ""
+        self.has_power_preview = False
+        self.power_preview_x = -1
+        self.power_preview_y = -1
+        self.power_preview_target_idx = -1
         self.turn = "enemy"
         self.ai_turn()
 
@@ -624,7 +741,17 @@ struct Game:
         if len(self.get_live_units("player")) == 0:
             self.winner = "enemy"
             self.game_over = True
-        elif self.enemies_spawned >= self.max_enemies and len(self.get_live_units("enemy")) == 0:
+        elif self.current_level == 0 and self.turn_count >= 6 and len(self.get_live_units("player")) > 0:
+            self.winner = "player"
+            self.game_over = True
+        elif self.current_level == 1 and self.enemies_spawned >= self.max_enemies and len(self.get_live_units("enemy")) == 0:
+            self.winner = "player"
+            self.game_over = True
+            self.save_fastest_run()
+        elif self.current_level == 2 and self.batteries_collected >= 6:
+            self.winner = "player"
+            self.game_over = True
+        elif self.current_level < 0 and self.enemies_spawned >= self.max_enemies and len(self.get_live_units("enemy")) == 0:
             self.winner = "player"
             self.game_over = True
             self.save_fastest_run()
@@ -659,7 +786,10 @@ struct Game:
         labels.append("Power")
         labels.append("End Turn")
         if self.game_over:
-            labels.append("Restart")
+            if self.current_level >= 0:
+                labels.append("Continue")
+            else:
+                labels.append("Restart")
         labels.append("How to Play")
         return labels^
 
@@ -667,10 +797,10 @@ struct Game:
         var enabled = List[Bool]()
         var confirm_enabled = self.has_pending and self.turn == "player" and not self.game_over
         enabled.append(confirm_enabled)
-        var undo_enabled = (self.has_pending or self.power_mode != "") and self.turn == "player" and not self.game_over
+        var undo_enabled = (self.has_pending or self.power_mode != "" or self.has_power_preview) and self.turn == "player" and not self.game_over
         enabled.append(undo_enabled)
         var power_enabled = False
-        if self.selected_idx >= 0 and self.turn == "player" and not self.game_over:
+        if self.selected_idx >= 0 and self.turn == "player" and not self.game_over and not self.has_power_preview:
             var unit = self.units[self.selected_idx]
             if unit.team == "player" and not unit.power_used and not unit.attacked:
                 power_enabled = True
@@ -746,6 +876,36 @@ struct Game:
                         var rect = self.pygame.Rect(nx * CELL_SIZE, ny * CELL_SIZE, CELL_SIZE, CELL_SIZE)
                         self.pygame.draw.rect(self.screen, Python.tuple(200, 150, 100), rect)
                         self.pygame.draw.rect(self.screen, COLOR_GRID_LINE, rect, 1)
+
+            # Power preview overlays
+            if self.has_power_preview and self.power_mode == "flame":
+                var rect = self.pygame.Rect(self.power_preview_x * CELL_SIZE, self.power_preview_y * CELL_SIZE, CELL_SIZE, CELL_SIZE)
+                self.pygame.draw.rect(self.screen, Python.tuple(255, 220, 0), rect)
+                self.pygame.draw.rect(self.screen, Python.tuple(255, 100, 0), rect, 3)
+                self.pygame.draw.rect(self.screen, COLOR_GRID_LINE, rect, 1)
+
+            if self.has_power_preview and self.power_mode == "swap":
+                var target = self.units[self.power_preview_target_idx]
+                var rect = self.pygame.Rect(target.x * CELL_SIZE, target.y * CELL_SIZE, CELL_SIZE, CELL_SIZE)
+                self.pygame.draw.rect(self.screen, Python.tuple(255, 255, 150), rect)
+                self.pygame.draw.rect(self.screen, Python.tuple(255, 255, 100), rect, 3)
+                var unit = self.units[self.selected_idx]
+                var start = Python.tuple(unit.x * CELL_SIZE + CELL_SIZE // 2, unit.y * CELL_SIZE + CELL_SIZE // 2)
+                var end = Python.tuple(target.x * CELL_SIZE + CELL_SIZE // 2, target.y * CELL_SIZE + CELL_SIZE // 2)
+                self.pygame.draw.line(self.screen, Python.tuple(255, 255, 100), start, end, 3)
+
+            if self.has_power_preview and self.power_mode == "charge":
+                var unit = self.units[self.selected_idx]
+                var dx = self.power_preview_x - unit.x
+                var dy = self.power_preview_y - unit.y
+                for step in range(1, 5):
+                    var nx = unit.x + dx * step
+                    var ny = unit.y + dy * step
+                    if nx >= 0 and nx < GRID_SIZE and ny >= 0 and ny < GRID_SIZE:
+                        var rect = self.pygame.Rect(nx * CELL_SIZE, ny * CELL_SIZE, CELL_SIZE, CELL_SIZE)
+                        self.pygame.draw.rect(self.screen, Python.tuple(255, 200, 100), rect)
+                        self.pygame.draw.rect(self.screen, COLOR_GRID_LINE, rect, 1)
+
             elif not self.has_pending and not self.units[self.selected_idx].moved:
                 var reachable = self.get_move_range(self.selected_idx)
                 for i in range(len(reachable)):
@@ -805,6 +965,9 @@ struct Game:
         elif self.turn == "player" and self.selected_idx >= 0:
             if self.has_pending:
                 msg_line1 = "Confirm or Undo move"
+            elif self.has_power_preview:
+                msg_line1 = "Click again to confirm"
+                msg_line2 = "Undo or Right-click to cancel"
             elif self.power_mode != "":
                 msg_line1 = self.message
             elif not self.units[self.selected_idx].moved:
@@ -823,12 +986,19 @@ struct Game:
             self.screen.blit(msg2_surf, Python.tuple(GRID_WIDTH + 10, SCREEN_HEIGHT - 36))
 
         var score_text = "Score: " + String(self.score)
+        if self.level_objective == "survive":
+            score_text = "Turn: " + String(self.turn_count) + " / 6"
+        elif self.level_objective == "destroy":
+            score_text = "Bugs: " + String(self.score) + " / 6"
+        elif self.level_objective == "collect":
+            score_text = "Batteries: " + String(self.batteries_collected) + " / 6"
         var score_surf = self.font.render(score_text, True, Python.tuple(255, 255, 100))
         self.screen.blit(score_surf, Python.tuple(GRID_WIDTH + 10, SCREEN_HEIGHT - 90))
 
-        var fastest_text = "Fastest: " + (String(self.fastest_run) + " turns" if self.fastest_run > 0 else "None")
-        var fastest_surf = self.font.render(fastest_text, True, Python.tuple(255, 200, 50))
-        self.screen.blit(fastest_surf, Python.tuple(GRID_WIDTH + 10, SCREEN_HEIGHT - 115))
+        if self.current_level < 0:
+            var fastest_text = "Fastest: " + (String(self.fastest_run) + " turns" if self.fastest_run > 0 else "None")
+            var fastest_surf = self.font.render(fastest_text, True, Python.tuple(255, 200, 50))
+            self.screen.blit(fastest_surf, Python.tuple(GRID_WIDTH + 10, SCREEN_HEIGHT - 115))
 
         if self.selected_idx >= 0 and not self.game_over:
             var sel = self.units[self.selected_idx]
@@ -867,6 +1037,230 @@ struct Game:
                     unit.y = -1
                 self.units[i] = unit
 
+    def handle_level_select_click(mut self, pos: PythonObject) raises:
+        var px = Int(py=pos[0])
+        var py = Int(py=pos[1])
+
+        var back_y = SCREEN_HEIGHT - 30
+        if py >= back_y - 15 and py <= back_y + 15:
+            self.level_select = False
+            self.title_screen = True
+            return
+
+        var node_positions = List[Tuple[Int, Int]]()
+        node_positions.append((300, 150))
+        node_positions.append((500, 300))
+        node_positions.append((300, 450))
+
+        for i in range(3):
+            var nx = node_positions[i][0]
+            var ny = node_positions[i][1]
+            var dx = px - nx
+            var dy = py - ny
+            if dx * dx + dy * dy <= 40 * 40:
+                self.level_select = False
+                self.start_level(i)
+                return
+
+    def draw_level_select(mut self) raises:
+        var tick = Int(py=self.pygame.time.get_ticks()) // 100
+        var COLOR_OCEAN = Python.tuple(20, 40, 80)
+        var COLOR_WAVE = Python.tuple(200, 220, 255)
+        self.screen.fill(COLOR_OCEAN)
+
+        # Draw waves in the ocean — horizontal shimmering lines that move over time
+        for wy in range(0, SCREEN_HEIGHT, 18):
+            var wave_offset = (tick * 2 + wy * 3) % (SCREEN_WIDTH + 40)
+            var wave_alpha = 60 + ((wy + tick) % 40)
+            var wave_color = Python.tuple(wave_alpha + 140, min(wave_alpha + 180, 255), 255)
+            var wx_start = wave_offset - 20
+            var wx_end = wx_start + 30 + ((wy + tick) % 20)
+            if wx_start < 0:
+                wx_start = 0
+            if wx_end > SCREEN_WIDTH:
+                wx_end = SCREEN_WIDTH
+            self.pygame.draw.line(self.screen, wave_color, Python.tuple(wx_start, wy), Python.tuple(wx_end, wy), 2)
+
+        # Track island edge tiles for later wave drawing
+        var island_tiles = List[Tuple[Int, Int, Bool]]()
+
+        for x in range(16):
+            for y in range(12):
+                var cx = Float64(x) - 7.5
+                var cy = Float64(y) - 5.5
+                var dx = cx / 6.0
+                var dy = cy / 4.5
+                var dist_sq = dx * dx + dy * dy
+                var is_island = False
+                if dist_sq < 1.0:
+                    if dist_sq > 0.72 and ((x + y * 3) % 5 == 0):
+                        pass
+                    else:
+                        is_island = True
+                        var bx = x * CELL_SIZE
+                        var by = y * CELL_SIZE
+                        var h = ((x * 73856093) ^ (y * 19349663)) & 0x7FFFFFFF
+                        var base_g = 120 + (h % 40)
+                        self.pygame.draw.rect(self.screen, Python.tuple(40, base_g, 40), self.pygame.Rect(bx, by, CELL_SIZE, CELL_SIZE))
+                        var blade_colors = List[Tuple[Int, Int, Int]]()
+                        blade_colors.append((50, 160, 50))
+                        blade_colors.append((60, 180, 60))
+                        blade_colors.append((80, 200, 80))
+                        blade_colors.append((40, 140, 40))
+                        for i in range(6 + (h % 5)):
+                            var sx = bx + 4 + ((h + i * 37) % (CELL_SIZE - 8))
+                            var sy = by + 4 + ((h + i * 53) % (CELL_SIZE - 12))
+                            var hh = (h + i * 17) % 4
+                            var c = blade_colors[hh]
+                            var hh2 = (h + i * 19) % 3 + 2
+                            self.pygame.draw.rect(self.screen, Python.tuple(c[0], c[1], c[2]), self.pygame.Rect(sx, sy + 4, 2, hh2))
+
+                # Check if this is a water tile adjacent to land (coastline)
+                if not is_island:
+                    var is_adjacent = False
+                    for nx in range(x - 1, x + 2):
+                        for ny in range(y - 1, y + 2):
+                            if nx == x and ny == y:
+                                continue
+                            var ncx = Float64(nx) - 7.5
+                            var ncy = Float64(ny) - 5.5
+                            var ndx = ncx / 6.0
+                            var ndy = ncy / 4.5
+                            var ndist_sq = ndx * ndx + ndy * ndy
+                            if ndist_sq < 1.0:
+                                if not (ndist_sq > 0.72 and ((nx + ny * 3) % 5 == 0)):
+                                    is_adjacent = True
+                    if is_adjacent:
+                        island_tiles.append((x, y, True))
+
+        # Draw white foam waves on the coastline tiles
+        for i in range(len(island_tiles)):
+            var x = island_tiles[i][0]
+            var y = island_tiles[i][1]
+            var bx = x * CELL_SIZE
+            var by = y * CELL_SIZE
+            var h = ((x * 73856093) ^ (y * 19349663)) & 0x7FFFFFFF
+            var wave_phase = (tick * 2 + h) % 20
+            var foam_alpha = 120 + abs(10 - wave_phase) * 8
+            var foam_color = Python.tuple(foam_alpha, foam_alpha, foam_alpha + 40)
+            # Draw a foam line along the edge facing land
+            for fx in range(3):
+                for fy in range(3):
+                    var draw_fx = 6 + fx * 14 + ((h + fx) % 8)
+                    var draw_fy = 6 + fy * 14 + ((h + fy * 3) % 8)
+                    var size = 2 + ((h + fx + fy + wave_phase) % 3)
+                    self.pygame.draw.rect(self.screen, foam_color, self.pygame.Rect(bx + draw_fx, by + draw_fy, size, size))
+
+        var rock_positions = List[Tuple[Int, Int]]()
+        rock_positions.append((3, 4))
+        rock_positions.append((12, 3))
+        rock_positions.append((11, 7))
+        rock_positions.append((2, 8))
+        for r in range(len(rock_positions)):
+            var rx = rock_positions[r][0]
+            var ry = rock_positions[r][1]
+            var bx = rx * CELL_SIZE
+            var by = ry * CELL_SIZE
+            var h = ((rx * 73856093) ^ (ry * 19349663)) & 0x7FFFFFFF
+            self.pygame.draw.rect(self.screen, Python.tuple(110, 75, 35), self.pygame.Rect(bx, by, CELL_SIZE, CELL_SIZE))
+            var crags = List[Tuple[Int, Int, Int, Int]]()
+            crags.append((4, 6, 8, 6))
+            crags.append((18, 2, 10, 8))
+            crags.append((10, 14, 12, 6))
+            crags.append((2, 24, 14, 8))
+            crags.append((22, 20, 10, 10))
+            crags.append((30, 8, 8, 12))
+            crags.append((14, 30, 10, 6))
+            for j in range(len(crags)):
+                var cx = bx + crags[j][0]
+                var cy = by + crags[j][1]
+                var cw = crags[j][2]
+                var ch = crags[j][3]
+                var shade = 80 + ((h + j * 29) % 40)
+                self.pygame.draw.rect(self.screen, Python.tuple(shade, shade - 20, shade - 40), self.pygame.Rect(cx, cy, cw, ch), border_radius=2)
+
+        var path_color = Python.tuple(180, 160, 100)
+        var path_width = 4
+        self.pygame.draw.line(self.screen, path_color, Python.tuple(300, 150), Python.tuple(500, 300), path_width)
+        self.pygame.draw.line(self.screen, path_color, Python.tuple(500, 300), Python.tuple(300, 450), path_width)
+
+        var node_positions = List[Tuple[Int, Int]]()
+        node_positions.append((300, 150))
+        node_positions.append((500, 300))
+        node_positions.append((300, 450))
+
+        var node_labels = List[String]()
+        node_labels.append("Survive")
+        node_labels.append("Destroy")
+        node_labels.append("Collect")
+
+        var node_subtitles = List[String]()
+        node_subtitles.append("6 turns")
+        node_subtitles.append("6 bugs")
+        node_subtitles.append("6 batteries")
+
+        var mouse_pos = self.pygame.mouse.get_pos()
+        var mx = Int(py=mouse_pos[0])
+        var my = Int(py=mouse_pos[1])
+
+        for i in range(3):
+            var nx = node_positions[i][0]
+            var ny = node_positions[i][1]
+            var completed = self.levels_completed[i]
+            var dx = mx - nx
+            var dy = my - ny
+            var is_hover = dx * dx + dy * dy <= 40 * 40
+
+            var pulse = (tick % 6) * 3
+            var radius = 25 + pulse if not completed else 25
+            var node_color = Python.tuple(255, 200, 50) if completed else (Python.tuple(100, 200, 255) if is_hover else Python.tuple(80, 150, 220))
+            var glow_color = Python.tuple(255, 220, 100) if completed else Python.tuple(150, 220, 255)
+
+            self.pygame.draw.circle(self.screen, glow_color, Python.tuple(nx, ny), radius + 8, 3)
+            self.pygame.draw.circle(self.screen, node_color, Python.tuple(nx, ny), radius)
+            self.pygame.draw.circle(self.screen, Python.tuple(255, 255, 255), Python.tuple(nx, ny), radius, 2)
+
+            if completed:
+                var check = self.big_font.render("V", True, Python.tuple(0, 200, 0))
+                var check_rect = check.get_rect(center=Python.tuple(nx, ny))
+                self.screen.blit(check, check_rect)
+            else:
+                var num = self.big_font.render(String(i + 1), True, Python.tuple(255, 255, 255))
+                var num_rect = num.get_rect(center=Python.tuple(nx, ny))
+                self.screen.blit(num, num_rect)
+
+            var label = self.font.render(node_labels[i], True, Python.tuple(255, 255, 255))
+            var label_rect = label.get_rect(center=Python.tuple(nx, ny + 40))
+            self.screen.blit(label, label_rect)
+
+            var sub = self.font.render(node_subtitles[i], True, Python.tuple(200, 200, 200))
+            var sub_rect = sub.get_rect(center=Python.tuple(nx, ny + 58))
+            self.screen.blit(sub, sub_rect)
+
+        var title_surf = self.big_font.render("Select a Mission", True, Python.tuple(255, 140, 0))
+        var title_rect = title_surf.get_rect(center=Python.tuple(SCREEN_WIDTH // 2, 40))
+        self.screen.blit(title_surf, title_rect)
+
+        var back_surf = self.font.render("Click here to return to title", True, Python.tuple(180, 180, 255))
+        var back_rect = back_surf.get_rect(center=Python.tuple(SCREEN_WIDTH // 2, SCREEN_HEIGHT - 30))
+        self.screen.blit(back_surf, back_rect)
+
+    def draw_victory(mut self) raises:
+        var COLOR_BG = Python.tuple(20, 10, 30)
+        self.screen.fill(COLOR_BG)
+
+        var title_surf = self.big_font.render("Victory!", True, Python.tuple(255, 200, 0))
+        var title_rect = title_surf.get_rect(center=Python.tuple(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 60))
+        self.screen.blit(title_surf, title_rect)
+
+        var sub_surf = self.font.render("All missions completed. The island is safe!", True, Python.tuple(255, 255, 255))
+        var sub_rect = sub_surf.get_rect(center=Python.tuple(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2))
+        self.screen.blit(sub_surf, sub_rect)
+
+        var back_surf = self.font.render("Click to return to title", True, Python.tuple(180, 180, 255))
+        var back_rect = back_surf.get_rect(center=Python.tuple(SCREEN_WIDTH // 2, SCREEN_HEIGHT - 50))
+        self.screen.blit(back_surf, back_rect)
+
     def draw_title(mut self) raises:
         var COLOR_BG = Python.tuple(20, 10, 30)
         var COLOR_TITLE = Python.tuple(255, 140, 0)
@@ -879,7 +1273,7 @@ struct Game:
         var title_rect = title_surf.get_rect(center=Python.tuple(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 40))
         self.screen.blit(title_surf, title_rect)
 
-        var flame_surf = self.big_font.render("🔥", True, Python.tuple(255, 255, 255))
+        var flame_surf = self.big_font.render("*", True, Python.tuple(255, 255, 255))
         var flame_rect = flame_surf.get_rect(center=Python.tuple(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 20))
         self.screen.blit(flame_surf, flame_rect)
 
@@ -968,6 +1362,11 @@ struct Game:
                     if Int(py=event.button) == 1:
                         if self.how_to_play:
                             self.how_to_play = False
+                        elif self.victory_screen:
+                            self.victory_screen = False
+                            self.title_screen = True
+                        elif self.level_select:
+                            self.handle_level_select_click(event.pos)
                         elif self.title_screen:
                             var pos = event.pos
                             var px = Int(py=pos[0])
@@ -978,16 +1377,29 @@ struct Game:
                                 self.how_to_play = True
                             else:
                                 self.title_screen = False
+                                self.level_select = True
                         else:
                             self.handle_click(event.pos)
                     elif Int(py=event.button) == 3:
-                        if not self.title_screen and not self.how_to_play and self.turn == "player" and self.selected_idx >= 0:
-                            self.selected_idx = -1
-                            self.has_pending = False
-                            self.power_mode = ""
+                        if not self.title_screen and not self.how_to_play and not self.level_select and not self.victory_screen and self.turn == "player" and self.selected_idx >= 0:
+                            if self.has_power_preview or self.power_mode != "":
+                                self.power_mode = ""
+                                self.has_power_preview = False
+                                self.power_preview_x = -1
+                                self.power_preview_y = -1
+                                self.power_preview_target_idx = -1
+                                self.message = "Your Turn - Select a unit"
+                            else:
+                                self.selected_idx = -1
+                                self.has_pending = False
+                                self.power_mode = ""
 
             if self.how_to_play:
                 self.draw_how_to_play()
+            elif self.victory_screen:
+                self.draw_victory()
+            elif self.level_select:
+                self.draw_level_select()
             elif self.title_screen:
                 self.draw_title()
             else:
