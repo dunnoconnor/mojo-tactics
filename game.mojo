@@ -1,10 +1,15 @@
 from std.python import Python, PythonObject
 from std.collections import List
-from constants import GRID_SIZE, CELL_SIZE, GRID_WIDTH, GRID_HEIGHT, UI_WIDTH, SCREEN_WIDTH, SCREEN_HEIGHT, FPS
+from constants import GRID_SIZE, CELL_SIZE, GRID_WIDTH, UI_WIDTH, SCREEN_WIDTH, SCREEN_HEIGHT, FPS
 from unit import Unit
-from sprites import SpriteRenderer
 from terrain import Terrain
 from ai import find_closest_player, get_live_unit_indices, get_adjacent_enemy_indices, find_best_move, find_path_to
+from level_select import LevelSelect
+from title_screen import TitleScreen
+from victory_screen import VictoryScreen
+from how_to_play import HowToPlayScreen
+from game_renderer import GameRenderer
+from ui_panel import UIManager
 
 def load_fastest_run() raises -> Int:
     try:
@@ -22,6 +27,10 @@ struct Game:
     var clock: PythonObject
     var font: PythonObject
     var big_font: PythonObject
+    var level_select_screen: LevelSelect
+    var title_screen_obj: TitleScreen
+    var victory_screen_obj: VictoryScreen
+    var how_to_play_screen_obj: HowToPlayScreen
     var units: List[Unit]
     var selected_idx: Int
     var has_pending: Bool
@@ -62,6 +71,10 @@ struct Game:
         self.clock = self.pygame.time.Clock()
         self.font = self.pygame.font.SysFont(PythonObject(None), 24)
         self.big_font = self.pygame.font.SysFont(PythonObject(None), 36)
+        self.level_select_screen = LevelSelect(self.pygame, self.screen, self.font, self.big_font)
+        self.title_screen_obj = TitleScreen(self.pygame, self.screen, self.font, self.big_font)
+        self.victory_screen_obj = VictoryScreen(self.pygame, self.screen, self.font, self.big_font)
+        self.how_to_play_screen_obj = HowToPlayScreen(self.pygame, self.screen, self.font, self.big_font)
         self.units = List[Unit]()
         self.selected_idx = -1
         self.has_pending = False
@@ -813,150 +826,16 @@ struct Game:
         return enabled^
 
     def draw(self) raises:
-        var renderer = SpriteRenderer(self.pygame, self.screen, self.font)
-
-        var COLOR_BG = Python.tuple(30, 30, 30)
-        var COLOR_GRID = Python.tuple(50, 50, 50)
-        var COLOR_GRID_LINE = Python.tuple(80, 80, 80)
-        var COLOR_MOVE_RANGE = Python.tuple(100, 200, 100)
-        var COLOR_MOVE_PREVIEW = Python.tuple(150, 255, 150)
-        var COLOR_ATTACK_RANGE = Python.tuple(255, 150, 100)
-        var COLOR_TEXT = Python.tuple(255, 255, 255)
-        var COLOR_BUTTON = Python.tuple(80, 80, 120)
-        var COLOR_BUTTON_HOVER = Python.tuple(100, 100, 150)
-        var COLOR_BUTTON_DISABLED = Python.tuple(60, 60, 60)
-        var COLOR_UI_BG = Python.tuple(20, 20, 20)
-
-        self.screen.fill(COLOR_BG)
-        var tick = Int(py=self.pygame.time.get_ticks()) // 100
-
-        self.terrain.draw(self.pygame, self.screen, tick)
-        self.terrain.draw_fire_tiles(self.pygame, self.screen, self.fire_tiles, tick)
-
-        for i in range(len(self.batteries)):
-            var idx = self.batteries[i]
-            var bx = idx % GRID_SIZE
-            var by = idx // GRID_SIZE
-            var cx = bx * CELL_SIZE + CELL_SIZE // 2
-            var cy = by * CELL_SIZE + CELL_SIZE // 2
-            var pulse = (tick % 4) * 2
-            self.pygame.draw.circle(self.screen, Python.tuple(0, 200, 255), Python.tuple(cx, cy), 8 + pulse, 2)
-            self.pygame.draw.circle(self.screen, Python.tuple(0, 200, 255), Python.tuple(cx, cy), 4)
-
+        var move_range = List[Tuple[Int, Int]]()
+        var adjacent_enemies = List[Int]()
         if self.selected_idx >= 0 and self.turn == "player" and not self.game_over:
-            if self.power_mode == "flame":
-                var unit = self.units[self.selected_idx]
-                for x in range(GRID_SIZE):
-                    for y in range(GRID_SIZE):
-                        var dist = abs(x - unit.x) + abs(y - unit.y)
-                        if dist <= 4 and dist > 0:
-                            var rect = self.pygame.Rect(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE)
-                            self.pygame.draw.rect(self.screen, Python.tuple(255, 80, 0), rect)
-                            self.pygame.draw.rect(self.screen, COLOR_GRID_LINE, rect, 1)
-            elif self.power_mode == "swap":
-                var unit = self.units[self.selected_idx]
-                for x in range(GRID_SIZE):
-                    for y in range(GRID_SIZE):
-                        var dist = abs(x - unit.x) + abs(y - unit.y)
-                        if dist <= 4:
-                            var rect = self.pygame.Rect(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE)
-                            self.pygame.draw.rect(self.screen, Python.tuple(180, 180, 255), rect)
-                            self.pygame.draw.rect(self.screen, COLOR_GRID_LINE, rect, 1)
-            elif self.power_mode == "charge":
-                var unit = self.units[self.selected_idx]
-                var dirs = List[Tuple[Int, Int]]()
-                dirs.append((1, 0))
-                dirs.append((-1, 0))
-                dirs.append((0, 1))
-                dirs.append((0, -1))
-                for d in range(len(dirs)):
-                    var nx = unit.x + dirs[d][0]
-                    var ny = unit.y + dirs[d][1]
-                    if nx >= 0 and nx < GRID_SIZE and ny >= 0 and ny < GRID_SIZE:
-                        var rect = self.pygame.Rect(nx * CELL_SIZE, ny * CELL_SIZE, CELL_SIZE, CELL_SIZE)
-                        self.pygame.draw.rect(self.screen, Python.tuple(200, 150, 100), rect)
-                        self.pygame.draw.rect(self.screen, COLOR_GRID_LINE, rect, 1)
-
-            # Power preview overlays
-            if self.has_power_preview and self.power_mode == "flame":
-                var rect = self.pygame.Rect(self.power_preview_x * CELL_SIZE, self.power_preview_y * CELL_SIZE, CELL_SIZE, CELL_SIZE)
-                self.pygame.draw.rect(self.screen, Python.tuple(255, 220, 0), rect)
-                self.pygame.draw.rect(self.screen, Python.tuple(255, 100, 0), rect, 3)
-                self.pygame.draw.rect(self.screen, COLOR_GRID_LINE, rect, 1)
-
-            if self.has_power_preview and self.power_mode == "swap":
-                var target = self.units[self.power_preview_target_idx]
-                var rect = self.pygame.Rect(target.x * CELL_SIZE, target.y * CELL_SIZE, CELL_SIZE, CELL_SIZE)
-                self.pygame.draw.rect(self.screen, Python.tuple(255, 255, 150), rect)
-                self.pygame.draw.rect(self.screen, Python.tuple(255, 255, 100), rect, 3)
-                var unit = self.units[self.selected_idx]
-                var start = Python.tuple(unit.x * CELL_SIZE + CELL_SIZE // 2, unit.y * CELL_SIZE + CELL_SIZE // 2)
-                var end = Python.tuple(target.x * CELL_SIZE + CELL_SIZE // 2, target.y * CELL_SIZE + CELL_SIZE // 2)
-                self.pygame.draw.line(self.screen, Python.tuple(255, 255, 100), start, end, 3)
-
-            if self.has_power_preview and self.power_mode == "charge":
-                var unit = self.units[self.selected_idx]
-                var dx = self.power_preview_x - unit.x
-                var dy = self.power_preview_y - unit.y
-                for step in range(1, 5):
-                    var nx = unit.x + dx * step
-                    var ny = unit.y + dy * step
-                    if nx >= 0 and nx < GRID_SIZE and ny >= 0 and ny < GRID_SIZE:
-                        var rect = self.pygame.Rect(nx * CELL_SIZE, ny * CELL_SIZE, CELL_SIZE, CELL_SIZE)
-                        self.pygame.draw.rect(self.screen, Python.tuple(255, 200, 100), rect)
-                        self.pygame.draw.rect(self.screen, COLOR_GRID_LINE, rect, 1)
-
-            elif not self.has_pending and not self.units[self.selected_idx].moved:
-                var reachable = self.get_move_range(self.selected_idx)
-                for i in range(len(reachable)):
-                    var mx = reachable[i][0]
-                    var my = reachable[i][1]
-                    var rect = self.pygame.Rect(mx * CELL_SIZE, my * CELL_SIZE, CELL_SIZE, CELL_SIZE)
-                    self.pygame.draw.rect(self.screen, COLOR_MOVE_RANGE, rect)
-                    self.pygame.draw.rect(self.screen, COLOR_GRID_LINE, rect, 1)
-            elif self.has_pending:
-                var rect = self.pygame.Rect(self.pending_x * CELL_SIZE, self.pending_y * CELL_SIZE, CELL_SIZE, CELL_SIZE)
-                self.pygame.draw.rect(self.screen, COLOR_MOVE_PREVIEW, rect)
-                self.pygame.draw.rect(self.screen, COLOR_GRID_LINE, rect, 1)
-
+            if self.power_mode == "" and not self.has_pending and not self.units[self.selected_idx].moved:
+                move_range = self.get_move_range(self.selected_idx)
             if self.power_mode == "" and not self.units[self.selected_idx].attacked:
-                var enemies = self.get_adjacent_enemies(self.selected_idx)
-                for i in range(len(enemies)):
-                    var e = self.units[enemies[i]]
-                    var rect = self.pygame.Rect(e.x * CELL_SIZE, e.y * CELL_SIZE, CELL_SIZE, CELL_SIZE)
-                    self.pygame.draw.rect(self.screen, COLOR_ATTACK_RANGE, rect)
-                    self.pygame.draw.rect(self.screen, COLOR_GRID_LINE, rect, 1)
+                adjacent_enemies = self.get_adjacent_enemies(self.selected_idx)
 
-        for i in range(len(self.units)):
-            var unit = self.units[i]
-            if unit.hp <= 0 and not unit.dying:
-                continue
-            renderer.draw_unit(unit, i, self.selected_idx, unit.x, unit.y)
-
-        var ui_rect = self.pygame.Rect(GRID_WIDTH, 0, UI_WIDTH, SCREEN_HEIGHT)
-        self.pygame.draw.rect(self.screen, COLOR_UI_BG, ui_rect)
-
-        var mouse_pos = self.pygame.mouse.get_pos()
-        var mx = Int(py=mouse_pos[0])
-        var my = Int(py=mouse_pos[1])
-        var buttons = self.get_button_rects()
-        var labels = self.get_button_labels()
-        var enabled = self.get_button_enabled()
-        for i in range(len(buttons)):
-            var rect = buttons[i]
-            var rx = Int(py=rect[0])
-            var ry = Int(py=rect[1])
-            var rw = Int(py=rect[2])
-            var rh = Int(py=rect[3])
-            var label = labels[i]
-            var is_enabled = enabled[i]
-            var is_hover = is_enabled and mx >= rx and mx < rx + rw and my >= ry and my < ry + rh
-            var btn_color = COLOR_BUTTON_HOVER if is_hover else (COLOR_BUTTON if is_enabled else COLOR_BUTTON_DISABLED)
-            self.pygame.draw.rect(self.screen, btn_color, rect, border_radius=4)
-            var text_surf = self.font.render(label, True, COLOR_TEXT)
-            var center = Python.tuple(rx + rw // 2, ry + rh // 2)
-            var text_rect = text_surf.get_rect(center=center)
-            self.screen.blit(text_surf, text_rect)
+        var game_renderer = GameRenderer(self.pygame, self.screen, self.font)
+        game_renderer.draw_board(self.terrain, self.fire_tiles, self.batteries, self.units, self.selected_idx, self.turn, self.game_over, self.power_mode, self.has_power_preview, self.power_preview_x, self.power_preview_y, self.power_preview_target_idx, self.has_pending, self.pending_x, self.pending_y, move_range, adjacent_enemies)
 
         var msg_line1 = self.message
         var msg_line2 = ""
@@ -979,11 +858,6 @@ struct Game:
             else:
                 msg_line1 = "Click adj. bug to attack"
                 msg_line2 = "or press End Turn"
-        var msg_surf = self.font.render(msg_line1, True, COLOR_TEXT)
-        self.screen.blit(msg_surf, Python.tuple(GRID_WIDTH + 10, SCREEN_HEIGHT - 60))
-        if msg_line2 != "":
-            var msg2_surf = self.font.render(msg_line2, True, Python.tuple(200, 200, 200))
-            self.screen.blit(msg2_surf, Python.tuple(GRID_WIDTH + 10, SCREEN_HEIGHT - 36))
 
         var score_text = "Score: " + String(self.score)
         if self.level_objective == "survive":
@@ -992,38 +866,35 @@ struct Game:
             score_text = "Bugs: " + String(self.score) + " / 6"
         elif self.level_objective == "collect":
             score_text = "Batteries: " + String(self.batteries_collected) + " / 6"
-        var score_surf = self.font.render(score_text, True, Python.tuple(255, 255, 100))
-        self.screen.blit(score_surf, Python.tuple(GRID_WIDTH + 10, SCREEN_HEIGHT - 90))
 
+        var fastest_text = ""
         if self.current_level < 0:
-            var fastest_text = "Fastest: " + (String(self.fastest_run) + " turns" if self.fastest_run > 0 else "None")
-            var fastest_surf = self.font.render(fastest_text, True, Python.tuple(255, 200, 50))
-            self.screen.blit(fastest_surf, Python.tuple(GRID_WIDTH + 10, SCREEN_HEIGHT - 115))
+            fastest_text = "Fastest: " + (String(self.fastest_run) + " turns" if self.fastest_run > 0 else "None")
 
+        var unit_name = ""
+        var unit_info = ""
+        var unit_power = ""
         if self.selected_idx >= 0 and not self.game_over:
             var sel = self.units[self.selected_idx]
-            var name = sel.unit_type
-            var power = ""
+            unit_name = sel.unit_type
+            unit_power = ""
             if sel.team == "enemy":
-                name = "Bug"
-                power = "Bite: 1 dmg adjacent"
+                unit_name = "Bug"
+                unit_power = "Bite: 1 dmg adjacent"
             elif sel.unit_type == "Mojo":
-                power = "Flame: creates a fire tile within 4"
+                unit_power = "Flame: creates a fire tile within 4"
             elif sel.unit_type == "Max":
-                power = "Jetpack: ignores terrain & fire. Swap within 4."
+                unit_power = "Jetpack: ignores terrain & fire. Swap within 4."
             elif sel.unit_type == "Mammoth":
-                power = "Charge: rush up to 4 spaces"
-            var info = name + "  HP:" + String(sel.hp) + "/4"
-            var info_surf = self.font.render(info, True, Python.tuple(255, 255, 200))
-            self.screen.blit(info_surf, Python.tuple(GRID_WIDTH + 10, 360))
-            if power != "":
-                var py_textwrap = Python.import_module("textwrap")
-                var wrapped = py_textwrap.wrap(power, width=22)
-                var ly = 390
-                for i in range(len(wrapped)):
-                    var line_surf = self.font.render(String(py=wrapped[i]), True, Python.tuple(255, 200, 100))
-                    self.screen.blit(line_surf, Python.tuple(GRID_WIDTH + 10, ly))
-                    ly += 22
+                unit_power = "Charge: rush up to 4 spaces"
+            unit_info = unit_name + "  HP:" + String(sel.hp) + "/4"
+
+        var buttons = self.get_button_rects()
+        var labels = self.get_button_labels()
+        var enabled = self.get_button_enabled()
+
+        var ui_manager = UIManager(self.pygame, self.screen, self.font, self.big_font)
+        ui_manager.draw_panel(buttons, labels, enabled, msg_line1, msg_line2, score_text, fastest_text, unit_name, unit_info, unit_power)
 
     def update_death_animations(mut self):
         for i in range(len(self.units)):
@@ -1037,321 +908,6 @@ struct Game:
                     unit.y = -1
                 self.units[i] = unit
 
-    def handle_level_select_click(mut self, pos: PythonObject) raises:
-        var px = Int(py=pos[0])
-        var py = Int(py=pos[1])
-
-        var back_y = SCREEN_HEIGHT - 30
-        if py >= back_y - 15 and py <= back_y + 15:
-            self.level_select = False
-            self.title_screen = True
-            return
-
-        var node_positions = List[Tuple[Int, Int]]()
-        node_positions.append((300, 150))
-        node_positions.append((500, 300))
-        node_positions.append((300, 450))
-
-        for i in range(3):
-            var nx = node_positions[i][0]
-            var ny = node_positions[i][1]
-            var dx = px - nx
-            var dy = py - ny
-            if dx * dx + dy * dy <= 40 * 40:
-                self.level_select = False
-                self.start_level(i)
-                return
-
-    def draw_level_select(mut self) raises:
-        var tick = Int(py=self.pygame.time.get_ticks()) // 100
-        var COLOR_OCEAN = Python.tuple(20, 40, 80)
-        var COLOR_WAVE = Python.tuple(200, 220, 255)
-        self.screen.fill(COLOR_OCEAN)
-
-        # Draw waves in the ocean — horizontal shimmering lines that move over time
-        for wy in range(0, SCREEN_HEIGHT, 18):
-            var wave_offset = (tick * 2 + wy * 3) % (SCREEN_WIDTH + 40)
-            var wave_alpha = 60 + ((wy + tick) % 40)
-            var wave_color = Python.tuple(wave_alpha + 140, min(wave_alpha + 180, 255), 255)
-            var wx_start = wave_offset - 20
-            var wx_end = wx_start + 30 + ((wy + tick) % 20)
-            if wx_start < 0:
-                wx_start = 0
-            if wx_end > SCREEN_WIDTH:
-                wx_end = SCREEN_WIDTH
-            self.pygame.draw.line(self.screen, wave_color, Python.tuple(wx_start, wy), Python.tuple(wx_end, wy), 2)
-
-        # Track island edge tiles for later wave drawing
-        var island_tiles = List[Tuple[Int, Int, Bool]]()
-
-        for x in range(16):
-            for y in range(12):
-                var cx = Float64(x) - 7.5
-                var cy = Float64(y) - 5.5
-                var dx = cx / 6.0
-                var dy = cy / 4.5
-                var dist_sq = dx * dx + dy * dy
-                var is_island = False
-                if dist_sq < 1.0:
-                    if dist_sq > 0.72 and ((x + y * 3) % 5 == 0):
-                        pass
-                    else:
-                        is_island = True
-                        var bx = x * CELL_SIZE
-                        var by = y * CELL_SIZE
-                        var h = ((x * 73856093) ^ (y * 19349663)) & 0x7FFFFFFF
-                        var base_g = 120 + (h % 40)
-                        self.pygame.draw.rect(self.screen, Python.tuple(40, base_g, 40), self.pygame.Rect(bx, by, CELL_SIZE, CELL_SIZE))
-                        var blade_colors = List[Tuple[Int, Int, Int]]()
-                        blade_colors.append((50, 160, 50))
-                        blade_colors.append((60, 180, 60))
-                        blade_colors.append((80, 200, 80))
-                        blade_colors.append((40, 140, 40))
-                        for i in range(6 + (h % 5)):
-                            var sx = bx + 4 + ((h + i * 37) % (CELL_SIZE - 8))
-                            var sy = by + 4 + ((h + i * 53) % (CELL_SIZE - 12))
-                            var hh = (h + i * 17) % 4
-                            var c = blade_colors[hh]
-                            var hh2 = (h + i * 19) % 3 + 2
-                            self.pygame.draw.rect(self.screen, Python.tuple(c[0], c[1], c[2]), self.pygame.Rect(sx, sy + 4, 2, hh2))
-
-                # Check if this is a water tile adjacent to land (coastline)
-                if not is_island:
-                    var is_adjacent = False
-                    for nx in range(x - 1, x + 2):
-                        for ny in range(y - 1, y + 2):
-                            if nx == x and ny == y:
-                                continue
-                            var ncx = Float64(nx) - 7.5
-                            var ncy = Float64(ny) - 5.5
-                            var ndx = ncx / 6.0
-                            var ndy = ncy / 4.5
-                            var ndist_sq = ndx * ndx + ndy * ndy
-                            if ndist_sq < 1.0:
-                                if not (ndist_sq > 0.72 and ((nx + ny * 3) % 5 == 0)):
-                                    is_adjacent = True
-                    if is_adjacent:
-                        island_tiles.append((x, y, True))
-
-        # Draw white foam waves on the coastline tiles
-        for i in range(len(island_tiles)):
-            var x = island_tiles[i][0]
-            var y = island_tiles[i][1]
-            var bx = x * CELL_SIZE
-            var by = y * CELL_SIZE
-            var h = ((x * 73856093) ^ (y * 19349663)) & 0x7FFFFFFF
-            var wave_phase = (tick * 2 + h) % 20
-            var foam_alpha = 120 + abs(10 - wave_phase) * 8
-            var foam_color = Python.tuple(foam_alpha, foam_alpha, foam_alpha + 40)
-            # Draw a foam line along the edge facing land
-            for fx in range(3):
-                for fy in range(3):
-                    var draw_fx = 6 + fx * 14 + ((h + fx) % 8)
-                    var draw_fy = 6 + fy * 14 + ((h + fy * 3) % 8)
-                    var size = 2 + ((h + fx + fy + wave_phase) % 3)
-                    self.pygame.draw.rect(self.screen, foam_color, self.pygame.Rect(bx + draw_fx, by + draw_fy, size, size))
-
-        var rock_positions = List[Tuple[Int, Int]]()
-        rock_positions.append((3, 4))
-        rock_positions.append((12, 3))
-        rock_positions.append((11, 7))
-        rock_positions.append((2, 8))
-        for r in range(len(rock_positions)):
-            var rx = rock_positions[r][0]
-            var ry = rock_positions[r][1]
-            var bx = rx * CELL_SIZE
-            var by = ry * CELL_SIZE
-            var h = ((rx * 73856093) ^ (ry * 19349663)) & 0x7FFFFFFF
-            self.pygame.draw.rect(self.screen, Python.tuple(110, 75, 35), self.pygame.Rect(bx, by, CELL_SIZE, CELL_SIZE))
-            var crags = List[Tuple[Int, Int, Int, Int]]()
-            crags.append((4, 6, 8, 6))
-            crags.append((18, 2, 10, 8))
-            crags.append((10, 14, 12, 6))
-            crags.append((2, 24, 14, 8))
-            crags.append((22, 20, 10, 10))
-            crags.append((30, 8, 8, 12))
-            crags.append((14, 30, 10, 6))
-            for j in range(len(crags)):
-                var cx = bx + crags[j][0]
-                var cy = by + crags[j][1]
-                var cw = crags[j][2]
-                var ch = crags[j][3]
-                var shade = 80 + ((h + j * 29) % 40)
-                self.pygame.draw.rect(self.screen, Python.tuple(shade, shade - 20, shade - 40), self.pygame.Rect(cx, cy, cw, ch), border_radius=2)
-
-        var path_color = Python.tuple(180, 160, 100)
-        var path_width = 4
-        self.pygame.draw.line(self.screen, path_color, Python.tuple(300, 150), Python.tuple(500, 300), path_width)
-        self.pygame.draw.line(self.screen, path_color, Python.tuple(500, 300), Python.tuple(300, 450), path_width)
-
-        var node_positions = List[Tuple[Int, Int]]()
-        node_positions.append((300, 150))
-        node_positions.append((500, 300))
-        node_positions.append((300, 450))
-
-        var node_labels = List[String]()
-        node_labels.append("Survive")
-        node_labels.append("Destroy")
-        node_labels.append("Collect")
-
-        var node_subtitles = List[String]()
-        node_subtitles.append("6 turns")
-        node_subtitles.append("6 bugs")
-        node_subtitles.append("6 batteries")
-
-        var mouse_pos = self.pygame.mouse.get_pos()
-        var mx = Int(py=mouse_pos[0])
-        var my = Int(py=mouse_pos[1])
-
-        for i in range(3):
-            var nx = node_positions[i][0]
-            var ny = node_positions[i][1]
-            var completed = self.levels_completed[i]
-            var dx = mx - nx
-            var dy = my - ny
-            var is_hover = dx * dx + dy * dy <= 40 * 40
-
-            var pulse = (tick % 6) * 3
-            var radius = 25 + pulse if not completed else 25
-            var node_color = Python.tuple(255, 200, 50) if completed else (Python.tuple(100, 200, 255) if is_hover else Python.tuple(80, 150, 220))
-            var glow_color = Python.tuple(255, 220, 100) if completed else Python.tuple(150, 220, 255)
-
-            self.pygame.draw.circle(self.screen, glow_color, Python.tuple(nx, ny), radius + 8, 3)
-            self.pygame.draw.circle(self.screen, node_color, Python.tuple(nx, ny), radius)
-            self.pygame.draw.circle(self.screen, Python.tuple(255, 255, 255), Python.tuple(nx, ny), radius, 2)
-
-            if completed:
-                var check = self.big_font.render("V", True, Python.tuple(0, 200, 0))
-                var check_rect = check.get_rect(center=Python.tuple(nx, ny))
-                self.screen.blit(check, check_rect)
-            else:
-                var num = self.big_font.render(String(i + 1), True, Python.tuple(255, 255, 255))
-                var num_rect = num.get_rect(center=Python.tuple(nx, ny))
-                self.screen.blit(num, num_rect)
-
-            var label = self.font.render(node_labels[i], True, Python.tuple(255, 255, 255))
-            var label_rect = label.get_rect(center=Python.tuple(nx, ny + 40))
-            self.screen.blit(label, label_rect)
-
-            var sub = self.font.render(node_subtitles[i], True, Python.tuple(200, 200, 200))
-            var sub_rect = sub.get_rect(center=Python.tuple(nx, ny + 58))
-            self.screen.blit(sub, sub_rect)
-
-        var title_surf = self.big_font.render("Select a Mission", True, Python.tuple(255, 140, 0))
-        var title_rect = title_surf.get_rect(center=Python.tuple(SCREEN_WIDTH // 2, 40))
-        self.screen.blit(title_surf, title_rect)
-
-        var back_surf = self.font.render("Click here to return to title", True, Python.tuple(180, 180, 255))
-        var back_rect = back_surf.get_rect(center=Python.tuple(SCREEN_WIDTH // 2, SCREEN_HEIGHT - 30))
-        self.screen.blit(back_surf, back_rect)
-
-    def draw_victory(mut self) raises:
-        var COLOR_BG = Python.tuple(20, 10, 30)
-        self.screen.fill(COLOR_BG)
-
-        var title_surf = self.big_font.render("Victory!", True, Python.tuple(255, 200, 0))
-        var title_rect = title_surf.get_rect(center=Python.tuple(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 60))
-        self.screen.blit(title_surf, title_rect)
-
-        var sub_surf = self.font.render("All missions completed. The island is safe!", True, Python.tuple(255, 255, 255))
-        var sub_rect = sub_surf.get_rect(center=Python.tuple(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2))
-        self.screen.blit(sub_surf, sub_rect)
-
-        var back_surf = self.font.render("Click to return to title", True, Python.tuple(180, 180, 255))
-        var back_rect = back_surf.get_rect(center=Python.tuple(SCREEN_WIDTH // 2, SCREEN_HEIGHT - 50))
-        self.screen.blit(back_surf, back_rect)
-
-    def draw_title(mut self) raises:
-        var COLOR_BG = Python.tuple(20, 10, 30)
-        var COLOR_TITLE = Python.tuple(255, 140, 0)
-        var COLOR_SUBTITLE = Python.tuple(255, 255, 255)
-        var COLOR_HIGH = Python.tuple(255, 200, 50)
-
-        self.screen.fill(COLOR_BG)
-
-        var title_surf = self.big_font.render("Mojo Tactics", True, COLOR_TITLE)
-        var title_rect = title_surf.get_rect(center=Python.tuple(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 40))
-        self.screen.blit(title_surf, title_rect)
-
-        var flame_surf = self.big_font.render("*", True, Python.tuple(255, 255, 255))
-        var flame_rect = flame_surf.get_rect(center=Python.tuple(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 20))
-        self.screen.blit(flame_surf, flame_rect)
-
-        var start_surf = self.font.render("Click to Start", True, COLOR_SUBTITLE)
-        var start_rect = start_surf.get_rect(center=Python.tuple(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 80))
-        self.screen.blit(start_surf, start_rect)
-
-        var fastest_text = "Fastest Run: " + (String(self.fastest_run) + " turns" if self.fastest_run > 0 else "None")
-        var fastest_surf = self.font.render(fastest_text, True, COLOR_HIGH)
-        var fastest_rect = fastest_surf.get_rect(center=Python.tuple(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 120))
-        self.screen.blit(fastest_surf, fastest_rect)
-
-        var htp_surf = self.font.render("How to Play", True, Python.tuple(180, 180, 255))
-        var htp_rect = htp_surf.get_rect(center=Python.tuple(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 160))
-        self.screen.blit(htp_surf, htp_rect)
-
-    def draw_how_to_play(mut self) raises:
-        var COLOR_BG = Python.tuple(20, 10, 30)
-        var COLOR_TITLE = Python.tuple(255, 140, 0)
-        var COLOR_TEXT = Python.tuple(255, 255, 255)
-        var COLOR_SECTION = Python.tuple(255, 200, 100)
-        var COLOR_BACK = Python.tuple(180, 180, 255)
-
-        self.screen.fill(COLOR_BG)
-
-        var title_surf = self.big_font.render("How to Play", True, COLOR_TITLE)
-        var title_rect = title_surf.get_rect(center=Python.tuple(SCREEN_WIDTH // 2, 40))
-        self.screen.blit(title_surf, title_rect)
-
-        var lines = List[String]()
-        lines.append("GOAL")
-        lines.append("Defeat all 6 bugs to win.")
-        lines.append("Fewest turns to win is saved as your fastest run.")
-        lines.append("")
-        lines.append("CONTROLS")
-        lines.append("Left click: select, move, attack, use powers")
-        lines.append("Right click: deselect current unit")
-        lines.append("")
-        lines.append("MOVEMENT")
-        lines.append("Select a unit, then click a green tile to move.")
-        lines.append("Movement cost: Grass=1, Water=2, Rocks=blocked.")
-        lines.append("Max movement budget is 4 per unit per turn.")
-        lines.append("")
-        lines.append("ATTACK")
-        lines.append("Click an adjacent enemy to deal 1 damage.")
-        lines.append("")
-        lines.append("POWERS")
-        lines.append("All units can move then use their power or attack.")
-        lines.append("You cannot attack AND use a power in the same turn.")
-        lines.append("Mojo: Flame - creates a fire tile within 4 spaces.")
-        lines.append("Max: Swap - swap places with any unit within 4.")
-        lines.append("      Max has a jetpack: ignores terrain, hovers over fire.")
-        lines.append("Mammoth: Charge - rush up to 4 spaces pushing enemies.")
-        lines.append("")
-        lines.append("FIRE TILES")
-        lines.append("Stepping onto fire deals 1 damage.")
-        lines.append("Ending your turn on fire also deals 1 damage.")
-        lines.append("")
-        lines.append("BATTERIES")
-        lines.append("Cyan circles heal 1 HP when stepped on.")
-        lines.append("Max 3 batteries on the map at once.")
-        lines.append("")
-        lines.append("ENEMIES")
-        lines.append("3 bugs start on the board. 3 reinforcements spawn over time.")
-        lines.append("Defeat all 6 bugs to win! They attack when adjacent.")
-
-        var y = 80
-        for i in range(len(lines)):
-            var line = lines[i]
-            var color = COLOR_SECTION if line == "GOAL" or line == "CONTROLS" or line == "MOVEMENT" or line == "ATTACK" or line == "POWERS" or line == "FIRE TILES" or line == "BATTERIES" or line == "ENEMIES" else COLOR_TEXT
-            var surf = self.font.render(line, True, color)
-            self.screen.blit(surf, Python.tuple(20, y))
-            y += 22
-
-        var back_surf = self.font.render("Click to go back", True, COLOR_BACK)
-        var back_rect = back_surf.get_rect(center=Python.tuple(SCREEN_WIDTH // 2, SCREEN_HEIGHT - 30))
-        self.screen.blit(back_surf, back_rect)
-
     def run(mut self) raises:
         var running = True
         while running:
@@ -1361,21 +917,25 @@ struct Game:
                 elif event.type == self.pygame.MOUSEBUTTONDOWN:
                     if Int(py=event.button) == 1:
                         if self.how_to_play:
-                            self.how_to_play = False
+                            if self.how_to_play_screen_obj.handle_click(event.pos):
+                                self.how_to_play = False
                         elif self.victory_screen:
-                            self.victory_screen = False
-                            self.title_screen = True
+                            if self.victory_screen_obj.handle_click(event.pos):
+                                self.victory_screen = False
+                                self.title_screen = True
                         elif self.level_select:
-                            self.handle_level_select_click(event.pos)
+                            var result = self.level_select_screen.handle_click(event.pos)
+                            if result == -1:
+                                self.level_select = False
+                                self.title_screen = True
+                            elif result >= 0:
+                                self.level_select = False
+                                self.start_level(result)
                         elif self.title_screen:
-                            var pos = event.pos
-                            var px = Int(py=pos[0])
-                            var py = Int(py=pos[1])
-                            var htp_y = SCREEN_HEIGHT // 2 + 160
-                            var htp_rect = self.pygame.Rect(0, htp_y - 15, SCREEN_WIDTH, 30)
-                            if px >= Int(py=htp_rect[0]) and px < Int(py=htp_rect[0]) + Int(py=htp_rect[2]) and py >= Int(py=htp_rect[1]) and py < Int(py=htp_rect[1]) + Int(py=htp_rect[3]):
+                            var result = self.title_screen_obj.handle_click(event.pos)
+                            if result == 1:
                                 self.how_to_play = True
-                            else:
+                            elif result == 0:
                                 self.title_screen = False
                                 self.level_select = True
                         else:
@@ -1395,13 +955,13 @@ struct Game:
                                 self.power_mode = ""
 
             if self.how_to_play:
-                self.draw_how_to_play()
+                self.how_to_play_screen_obj.draw()
             elif self.victory_screen:
-                self.draw_victory()
+                self.victory_screen_obj.draw()
             elif self.level_select:
-                self.draw_level_select()
+                self.level_select_screen.draw(self.levels_completed)
             elif self.title_screen:
-                self.draw_title()
+                self.title_screen_obj.draw(self.fastest_run)
             else:
                 self.update_death_animations()
                 self.draw()
